@@ -1,6 +1,6 @@
 # Anonymity Flow (AF)
 
-A Network Traffic Feature Extraction Tool.
+A anonymity traffic feature extraction tool base on [RustiFlow](https://github.com/idlab-discover/RustiFlow.git).
 
 ## Overview
 
@@ -164,6 +164,7 @@ Make sure that you don't use docker desktop and that you don't have it installed
 - **User Space Programs**:
   ```bash
   cargo build
+  cargo build --release
   ```
 
 ## Running the Project in dev mode

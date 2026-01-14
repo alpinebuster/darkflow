@@ -1,9 +1,9 @@
 (function() {
-    var implementors = Object.fromEntries([["rustiflow",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.StructuralPartialEq.html\" title=\"trait core::marker::StructuralPartialEq\">StructuralPartialEq</a> for <a class=\"enum\" href=\"rustiflow/flows/basic_flow/enum.FlowState.html\" title=\"enum rustiflow::flows::basic_flow::FlowState\">FlowState</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.StructuralPartialEq.html\" title=\"trait core::marker::StructuralPartialEq\">StructuralPartialEq</a> for <a class=\"enum\" href=\"rustiflow/flows/util/enum.FlowExpireCause.html\" title=\"enum rustiflow::flows::util::FlowExpireCause\">FlowExpireCause</a>"]]]]);
+    const implementors = Object.fromEntries([["darkflow",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.StructuralPartialEq.html\" title=\"trait core::marker::StructuralPartialEq\">StructuralPartialEq</a> for <a class=\"enum\" href=\"darkflow/flows/basic_flow/enum.FlowState.html\" title=\"enum darkflow::flows::basic_flow::FlowState\">FlowState</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/marker/trait.StructuralPartialEq.html\" title=\"trait core::marker::StructuralPartialEq\">StructuralPartialEq</a> for <a class=\"enum\" href=\"darkflow/flows/util/enum.FlowExpireCause.html\" title=\"enum darkflow::flows::util::FlowExpireCause\">FlowExpireCause</a>",0]]]]);
     if (window.register_implementors) {
         window.register_implementors(implementors);
     } else {
         window.pending_implementors = implementors;
     }
 })()
-//{"start":57,"fragment_lengths":[691]}
+//{"start":59,"fragment_lengths":[690]}

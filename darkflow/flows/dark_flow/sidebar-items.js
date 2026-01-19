@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["DarkFlow"]};
+window.SIDEBAR_ITEMS = {"struct":["Darkflow"]};

@@ -17,7 +17,7 @@
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">use </span>clap::Parser;
 <a href=#18 id=18 data-nosnippet>18</a><span class="kw">use </span>flows::{
 <a href=#19 id=19 data-nosnippet>19</a>    basic_flow::BasicFlow, cidds_flow::CiddsFlow, custom_flow::CustomFlow, flow::Flow,
-<a href=#20 id=20 data-nosnippet>20</a>    nf_flow::NfFlow, dark_flow::Darkflow
+<a href=#20 id=20 data-nosnippet>20</a>    nf_flow::NfFlow, dark_flow::Darkflow, lexnet_flow::Lexnetflow,
 <a href=#21 id=21 data-nosnippet>21</a>};
 <a href=#22 id=22 data-nosnippet>22</a><span class="kw">use </span>log::{debug, error, info};
 <a href=#23 id=23 data-nosnippet>23</a><span class="kw">use </span>output::OutputWriter;
@@ -172,80 +172,82 @@
 <a href=#172 id=172 data-nosnippet>172</a>                FlowType::Nfstream =&gt; <span class="macro">execute_realtime!</span>(NfFlow),
 <a href=#173 id=173 data-nosnippet>173</a>                FlowType::Rustiflow =&gt; <span class="macro">execute_realtime!</span>(RustiFlow),
 <a href=#174 id=174 data-nosnippet>174</a>                FlowType::Darkflow =&gt; <span class="macro">execute_realtime!</span>(Darkflow),
-<a href=#175 id=175 data-nosnippet>175</a>                FlowType::Custom =&gt; <span class="macro">execute_realtime!</span>(CustomFlow),
-<a href=#176 id=176 data-nosnippet>176</a>            }
-<a href=#177 id=177 data-nosnippet>177</a>        }
-<a href=#178 id=178 data-nosnippet>178</a>        Commands::Pcap { path } =&gt; {
-<a href=#179 id=179 data-nosnippet>179</a>            <span class="macro">macro_rules!</span> execute_offline {
-<a href=#180 id=180 data-nosnippet>180</a>                (<span class="macro-nonterminal">$flow_ty</span>:ty) =&gt; {{
-<a href=#181 id=181 data-nosnippet>181</a>                    <span class="comment">// Create output writer and initialize it
-<a href=#182 id=182 data-nosnippet>182</a>                    </span><span class="kw">let </span><span class="kw-2">mut </span>output_writer = OutputWriter::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;::new(
-<a href=#183 id=183 data-nosnippet>183</a>                        config.output.output,
-<a href=#184 id=184 data-nosnippet>184</a>                        config.output.header,
-<a href=#185 id=185 data-nosnippet>185</a>                        config.output.drop_contaminant_features,
-<a href=#186 id=186 data-nosnippet>186</a>                        config.output.export_path,
-<a href=#187 id=187 data-nosnippet>187</a>                    );
-<a href=#188 id=188 data-nosnippet>188</a>
-<a href=#189 id=189 data-nosnippet>189</a>                    <span class="comment">// Synchronous initialization to ensure headers are written
-<a href=#190 id=190 data-nosnippet>190</a>                    </span>output_writer.init();
-<a href=#191 id=191 data-nosnippet>191</a>
-<a href=#192 id=192 data-nosnippet>192</a>                    <span class="comment">// Create channel for exporting flows
-<a href=#193 id=193 data-nosnippet>193</a>                    </span><span class="kw">let </span>(sender, <span class="kw-2">mut </span>receiver) = mpsc::channel::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;(<span class="number">1000</span>);
-<a href=#194 id=194 data-nosnippet>194</a>
-<a href=#195 id=195 data-nosnippet>195</a>                    <span class="comment">// Start the output writer in a separate task
-<a href=#196 id=196 data-nosnippet>196</a>                    </span><span class="kw">let </span>output_task = tokio::spawn(<span class="kw">async move </span>{
-<a href=#197 id=197 data-nosnippet>197</a>                        <span class="kw">while let </span><span class="prelude-val">Some</span>(flow) = receiver.recv().<span class="kw">await </span>{
-<a href=#198 id=198 data-nosnippet>198</a>                            <span class="kw">if let </span><span class="prelude-val">Err</span>(e) = output_writer.write_flow(flow) {
-<a href=#199 id=199 data-nosnippet>199</a>                                <span class="macro">error!</span>(<span class="string">"Error writing flow: {:?}"</span>, e);
-<a href=#200 id=200 data-nosnippet>200</a>                            }
-<a href=#201 id=201 data-nosnippet>201</a>                        }
-<a href=#202 id=202 data-nosnippet>202</a>
-<a href=#203 id=203 data-nosnippet>203</a>                        <span class="comment">// Ensure that all remaining flows are flushed properly before ending
-<a href=#204 id=204 data-nosnippet>204</a>                        </span>output_writer.flush_and_close().unwrap_or_else(|e| {
-<a href=#205 id=205 data-nosnippet>205</a>                            <span class="macro">error!</span>(<span class="string">"Error flushing and closing the writer: {:?}"</span>, e);
-<a href=#206 id=206 data-nosnippet>206</a>                        });
-<a href=#207 id=207 data-nosnippet>207</a>                        <span class="macro">debug!</span>(<span class="string">"OutputWriter task finished"</span>);
-<a href=#208 id=208 data-nosnippet>208</a>                    });
-<a href=#209 id=209 data-nosnippet>209</a>
-<a href=#210 id=210 data-nosnippet>210</a>                    <span class="kw">let </span>start = Instant::now();
-<a href=#211 id=211 data-nosnippet>211</a>
-<a href=#212 id=212 data-nosnippet>212</a>                    <span class="kw">if let </span><span class="prelude-val">Err</span>(err) = read_pcap_file::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;(
-<a href=#213 id=213 data-nosnippet>213</a>                        <span class="kw-2">&amp;</span>path,
-<a href=#214 id=214 data-nosnippet>214</a>                        sender,
-<a href=#215 id=215 data-nosnippet>215</a>                        std::cmp::min(config.config.threads.unwrap_or(<span class="number">5</span>), num_cpus::get() <span class="kw">as </span>u8),
-<a href=#216 id=216 data-nosnippet>216</a>                        config.config.active_timeout,
-<a href=#217 id=217 data-nosnippet>217</a>                        config.config.idle_timeout,
-<a href=#218 id=218 data-nosnippet>218</a>                        config.config.early_export,
-<a href=#219 id=219 data-nosnippet>219</a>                        config.config.expiration_check_interval,
-<a href=#220 id=220 data-nosnippet>220</a>                    )
-<a href=#221 id=221 data-nosnippet>221</a>                    .<span class="kw">await
-<a href=#222 id=222 data-nosnippet>222</a>                    </span>{
-<a href=#223 id=223 data-nosnippet>223</a>                        <span class="macro">error!</span>(<span class="string">"Error: {:?}"</span>, err);
-<a href=#224 id=224 data-nosnippet>224</a>                    }
-<a href=#225 id=225 data-nosnippet>225</a>
-<a href=#226 id=226 data-nosnippet>226</a>                    <span class="comment">// Wait for the output task to finish
-<a href=#227 id=227 data-nosnippet>227</a>                    </span>output_task.<span class="kw">await</span>.unwrap_or_else(|e| {
-<a href=#228 id=228 data-nosnippet>228</a>                        <span class="macro">error!</span>(<span class="string">"Error waiting for output task: {:?}"</span>, e);
-<a href=#229 id=229 data-nosnippet>229</a>                    });
-<a href=#230 id=230 data-nosnippet>230</a>
-<a href=#231 id=231 data-nosnippet>231</a>                    <span class="kw">let </span>end = Instant::now();
-<a href=#232 id=232 data-nosnippet>232</a>                    <span class="macro">debug!</span>(
-<a href=#233 id=233 data-nosnippet>233</a>                        <span class="string">"Duration: {:?} milliseconds"</span>,
-<a href=#234 id=234 data-nosnippet>234</a>                        end.duration_since(start).as_millis()
-<a href=#235 id=235 data-nosnippet>235</a>                    );
-<a href=#236 id=236 data-nosnippet>236</a>                }};
-<a href=#237 id=237 data-nosnippet>237</a>            }
-<a href=#238 id=238 data-nosnippet>238</a>
-<a href=#239 id=239 data-nosnippet>239</a>            <span class="kw">match </span>config.config.features {
-<a href=#240 id=240 data-nosnippet>240</a>                FlowType::Basic =&gt; <span class="macro">execute_offline!</span>(BasicFlow),
-<a href=#241 id=241 data-nosnippet>241</a>                FlowType::CIC =&gt; <span class="macro">execute_offline!</span>(CicFlow),
-<a href=#242 id=242 data-nosnippet>242</a>                FlowType::CIDDS =&gt; <span class="macro">execute_offline!</span>(CiddsFlow),
-<a href=#243 id=243 data-nosnippet>243</a>                FlowType::Nfstream =&gt; <span class="macro">execute_offline!</span>(NfFlow),
-<a href=#244 id=244 data-nosnippet>244</a>                FlowType::Rustiflow =&gt; <span class="macro">execute_offline!</span>(RustiFlow),
-<a href=#245 id=245 data-nosnippet>245</a>                FlowType::Darkflow =&gt; <span class="macro">execute_offline!</span>(Darkflow),
-<a href=#246 id=246 data-nosnippet>246</a>                FlowType::Custom =&gt; <span class="macro">execute_offline!</span>(CustomFlow),
-<a href=#247 id=247 data-nosnippet>247</a>            }
-<a href=#248 id=248 data-nosnippet>248</a>        }
-<a href=#249 id=249 data-nosnippet>249</a>    }
-<a href=#250 id=250 data-nosnippet>250</a>}
+<a href=#175 id=175 data-nosnippet>175</a>                FlowType::Lexnetflow =&gt; <span class="macro">execute_realtime!</span>(Lexnetflow),
+<a href=#176 id=176 data-nosnippet>176</a>                FlowType::Custom =&gt; <span class="macro">execute_realtime!</span>(CustomFlow),
+<a href=#177 id=177 data-nosnippet>177</a>            }
+<a href=#178 id=178 data-nosnippet>178</a>        }
+<a href=#179 id=179 data-nosnippet>179</a>        Commands::Pcap { path } =&gt; {
+<a href=#180 id=180 data-nosnippet>180</a>            <span class="macro">macro_rules!</span> execute_offline {
+<a href=#181 id=181 data-nosnippet>181</a>                (<span class="macro-nonterminal">$flow_ty</span>:ty) =&gt; {{
+<a href=#182 id=182 data-nosnippet>182</a>                    <span class="comment">// Create output writer and initialize it
+<a href=#183 id=183 data-nosnippet>183</a>                    </span><span class="kw">let </span><span class="kw-2">mut </span>output_writer = OutputWriter::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;::new(
+<a href=#184 id=184 data-nosnippet>184</a>                        config.output.output,
+<a href=#185 id=185 data-nosnippet>185</a>                        config.output.header,
+<a href=#186 id=186 data-nosnippet>186</a>                        config.output.drop_contaminant_features,
+<a href=#187 id=187 data-nosnippet>187</a>                        config.output.export_path,
+<a href=#188 id=188 data-nosnippet>188</a>                    );
+<a href=#189 id=189 data-nosnippet>189</a>
+<a href=#190 id=190 data-nosnippet>190</a>                    <span class="comment">// Synchronous initialization to ensure headers are written
+<a href=#191 id=191 data-nosnippet>191</a>                    </span>output_writer.init();
+<a href=#192 id=192 data-nosnippet>192</a>
+<a href=#193 id=193 data-nosnippet>193</a>                    <span class="comment">// Create channel for exporting flows
+<a href=#194 id=194 data-nosnippet>194</a>                    </span><span class="kw">let </span>(sender, <span class="kw-2">mut </span>receiver) = mpsc::channel::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;(<span class="number">1000</span>);
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a>                    <span class="comment">// Start the output writer in a separate task
+<a href=#197 id=197 data-nosnippet>197</a>                    </span><span class="kw">let </span>output_task = tokio::spawn(<span class="kw">async move </span>{
+<a href=#198 id=198 data-nosnippet>198</a>                        <span class="kw">while let </span><span class="prelude-val">Some</span>(flow) = receiver.recv().<span class="kw">await </span>{
+<a href=#199 id=199 data-nosnippet>199</a>                            <span class="kw">if let </span><span class="prelude-val">Err</span>(e) = output_writer.write_flow(flow) {
+<a href=#200 id=200 data-nosnippet>200</a>                                <span class="macro">error!</span>(<span class="string">"Error writing flow: {:?}"</span>, e);
+<a href=#201 id=201 data-nosnippet>201</a>                            }
+<a href=#202 id=202 data-nosnippet>202</a>                        }
+<a href=#203 id=203 data-nosnippet>203</a>
+<a href=#204 id=204 data-nosnippet>204</a>                        <span class="comment">// Ensure that all remaining flows are flushed properly before ending
+<a href=#205 id=205 data-nosnippet>205</a>                        </span>output_writer.flush_and_close().unwrap_or_else(|e| {
+<a href=#206 id=206 data-nosnippet>206</a>                            <span class="macro">error!</span>(<span class="string">"Error flushing and closing the writer: {:?}"</span>, e);
+<a href=#207 id=207 data-nosnippet>207</a>                        });
+<a href=#208 id=208 data-nosnippet>208</a>                        <span class="macro">debug!</span>(<span class="string">"OutputWriter task finished"</span>);
+<a href=#209 id=209 data-nosnippet>209</a>                    });
+<a href=#210 id=210 data-nosnippet>210</a>
+<a href=#211 id=211 data-nosnippet>211</a>                    <span class="kw">let </span>start = Instant::now();
+<a href=#212 id=212 data-nosnippet>212</a>
+<a href=#213 id=213 data-nosnippet>213</a>                    <span class="kw">if let </span><span class="prelude-val">Err</span>(err) = read_pcap_file::&lt;<span class="macro-nonterminal">$flow_ty</span>&gt;(
+<a href=#214 id=214 data-nosnippet>214</a>                        <span class="kw-2">&amp;</span>path,
+<a href=#215 id=215 data-nosnippet>215</a>                        sender,
+<a href=#216 id=216 data-nosnippet>216</a>                        std::cmp::min(config.config.threads.unwrap_or(<span class="number">5</span>), num_cpus::get() <span class="kw">as </span>u8),
+<a href=#217 id=217 data-nosnippet>217</a>                        config.config.active_timeout,
+<a href=#218 id=218 data-nosnippet>218</a>                        config.config.idle_timeout,
+<a href=#219 id=219 data-nosnippet>219</a>                        config.config.early_export,
+<a href=#220 id=220 data-nosnippet>220</a>                        config.config.expiration_check_interval,
+<a href=#221 id=221 data-nosnippet>221</a>                    )
+<a href=#222 id=222 data-nosnippet>222</a>                    .<span class="kw">await
+<a href=#223 id=223 data-nosnippet>223</a>                    </span>{
+<a href=#224 id=224 data-nosnippet>224</a>                        <span class="macro">error!</span>(<span class="string">"Error: {:?}"</span>, err);
+<a href=#225 id=225 data-nosnippet>225</a>                    }
+<a href=#226 id=226 data-nosnippet>226</a>
+<a href=#227 id=227 data-nosnippet>227</a>                    <span class="comment">// Wait for the output task to finish
+<a href=#228 id=228 data-nosnippet>228</a>                    </span>output_task.<span class="kw">await</span>.unwrap_or_else(|e| {
+<a href=#229 id=229 data-nosnippet>229</a>                        <span class="macro">error!</span>(<span class="string">"Error waiting for output task: {:?}"</span>, e);
+<a href=#230 id=230 data-nosnippet>230</a>                    });
+<a href=#231 id=231 data-nosnippet>231</a>
+<a href=#232 id=232 data-nosnippet>232</a>                    <span class="kw">let </span>end = Instant::now();
+<a href=#233 id=233 data-nosnippet>233</a>                    <span class="macro">debug!</span>(
+<a href=#234 id=234 data-nosnippet>234</a>                        <span class="string">"Duration: {:?} milliseconds"</span>,
+<a href=#235 id=235 data-nosnippet>235</a>                        end.duration_since(start).as_millis()
+<a href=#236 id=236 data-nosnippet>236</a>                    );
+<a href=#237 id=237 data-nosnippet>237</a>                }};
+<a href=#238 id=238 data-nosnippet>238</a>            }
+<a href=#239 id=239 data-nosnippet>239</a>
+<a href=#240 id=240 data-nosnippet>240</a>            <span class="kw">match </span>config.config.features {
+<a href=#241 id=241 data-nosnippet>241</a>                FlowType::Basic =&gt; <span class="macro">execute_offline!</span>(BasicFlow),
+<a href=#242 id=242 data-nosnippet>242</a>                FlowType::CIC =&gt; <span class="macro">execute_offline!</span>(CicFlow),
+<a href=#243 id=243 data-nosnippet>243</a>                FlowType::CIDDS =&gt; <span class="macro">execute_offline!</span>(CiddsFlow),
+<a href=#244 id=244 data-nosnippet>244</a>                FlowType::Nfstream =&gt; <span class="macro">execute_offline!</span>(NfFlow),
+<a href=#245 id=245 data-nosnippet>245</a>                FlowType::Rustiflow =&gt; <span class="macro">execute_offline!</span>(RustiFlow),
+<a href=#246 id=246 data-nosnippet>246</a>                FlowType::Darkflow =&gt; <span class="macro">execute_offline!</span>(Darkflow),
+<a href=#247 id=247 data-nosnippet>247</a>                FlowType::Lexnetflow =&gt; <span class="macro">execute_offline!</span>(Lexnetflow),
+<a href=#248 id=248 data-nosnippet>248</a>                FlowType::Custom =&gt; <span class="macro">execute_offline!</span>(CustomFlow),
+<a href=#249 id=249 data-nosnippet>249</a>            }
+<a href=#250 id=250 data-nosnippet>250</a>        }
+<a href=#251 id=251 data-nosnippet>251</a>    }
+<a href=#252 id=252 data-nosnippet>252</a>}
 </code></pre></div></section></main></body></html>

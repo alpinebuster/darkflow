@@ -1,6 +1,8 @@
-# Dark Flow (DF)
+# Continual Dark Flow (CDF)
 
-A DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow).
+A DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow) for [Continual HyperTor: Classifying Darknet Traffic Across Multiple Encrypted Tunnels]().
+Continual HyperTor is designed to handle a virtually unbounded number of proxy tunnel types.
+Each tunnel type is treated as an **episode**, enabling the model to **rapidly adapt to newly encountered tunnel types** based on knowledge learned from previously known tunnel/task types, while **maintaining continuous detection of Tor usage across all tunnel types that have appeared so far**.
 
 ## Overview
 

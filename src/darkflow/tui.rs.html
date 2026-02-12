@@ -28,7 +28,7 @@
 <a href=#28 id=28 data-nosnippet>28</a>    <span class="kw">fn </span>reset() -&gt; <span class="self">Self </span>{
 <a href=#29 id=29 data-nosnippet>29</a>        Config {
 <a href=#30 id=30 data-nosnippet>30</a>            config: ExportConfig {
-<a href=#31 id=31 data-nosnippet>31</a>                features: FlowType::Basic,
+<a href=#31 id=31 data-nosnippet>31</a>                features: FlowType::Darkflow,
 <a href=#32 id=32 data-nosnippet>32</a>                active_timeout: <span class="number">3600</span>,
 <a href=#33 id=33 data-nosnippet>33</a>                idle_timeout: <span class="number">120</span>,
 <a href=#34 id=34 data-nosnippet>34</a>                early_export: <span class="prelude-val">None</span>,
@@ -36,11 +36,11 @@
 <a href=#36 id=36 data-nosnippet>36</a>                expiration_check_interval: <span class="number">60</span>,
 <a href=#37 id=37 data-nosnippet>37</a>            },
 <a href=#38 id=38 data-nosnippet>38</a>            output: OutputConfig {
-<a href=#39 id=39 data-nosnippet>39</a>                output: ExportMethodType::Print,
+<a href=#39 id=39 data-nosnippet>39</a>                output: ExportMethodType::Csv,
 <a href=#40 id=40 data-nosnippet>40</a>                export_path: <span class="prelude-val">None</span>,
-<a href=#41 id=41 data-nosnippet>41</a>                header: <span class="bool-val">false</span>,
+<a href=#41 id=41 data-nosnippet>41</a>                header: <span class="bool-val">true</span>,
 <a href=#42 id=42 data-nosnippet>42</a>                drop_contaminant_features: <span class="bool-val">false</span>,
-<a href=#43 id=43 data-nosnippet>43</a>                performance_mode: <span class="bool-val">false</span>,
+<a href=#43 id=43 data-nosnippet>43</a>                performance_mode: <span class="bool-val">true</span>,
 <a href=#44 id=44 data-nosnippet>44</a>            },
 <a href=#45 id=45 data-nosnippet>45</a>            command: Commands::Realtime {
 <a href=#46 id=46 data-nosnippet>46</a>                interface: String::from(<span class="string">"eth0"</span>),

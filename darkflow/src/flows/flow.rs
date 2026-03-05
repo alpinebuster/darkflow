@@ -78,7 +78,8 @@ pub trait Flow: Send + Sync + 'static + Clone {
 
     /// Dumps the current state of the flow without contaminant features.
     ///
-    /// This method returns a string representation of the current state of the flow without contaminant features.
+    /// This only dump those features whose semantics will not change due to the future evolution of flow.
+    /// Suitable for online/early classification!
     ///
     /// ### Returns
     ///

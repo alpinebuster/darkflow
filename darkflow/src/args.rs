@@ -4,7 +4,16 @@ use strum_macros::{EnumString, VariantNames};
 
 #[derive(Debug, Parser)]
 #[clap(author, version, about)]
-#[clap(group(ArgGroup::new("config_group").args(&["config_file"])), group(ArgGroup::new("cli_group").args(&["features", "output", "active_timeout", "idle_timeout", "export_path"]).multiple(true)))]
+#[clap(
+    group(ArgGroup::new("config_group").args(&["config_file"])),
+    group(ArgGroup::new("cli_group").args(&[
+        "features",
+        "output",
+        "active_timeout",
+        "idle_timeout",
+        "export_path",
+    ]).multiple(true)),
+)]
 pub struct Cli {
     /// Configuration file path
     #[clap(long, short = 'c', group = "config_group")]
@@ -191,7 +200,7 @@ impl Default for ConfigFile {
     fn default() -> Self {
         ConfigFile {
             config: ExportConfig {
-                features: FlowType::Basic,
+                features: FlowType::Darkflow,
                 active_timeout: 3600,
                 idle_timeout: 120,
                 expiration_check_interval: 60,
@@ -199,11 +208,11 @@ impl Default for ConfigFile {
                 threads: None,
             },
             output: OutputConfig {
-                output: ExportMethodType::Print,
+                output: ExportMethodType::Csv,
                 export_path: None,
-                header: false,
+                header: true,
                 drop_contaminant_features: false,
-                performance_mode: false,
+                performance_mode: true,
             },
         }
     }

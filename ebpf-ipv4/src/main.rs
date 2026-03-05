@@ -46,7 +46,10 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
     }
 
     let ipv4hdr = ctx.load::<Ipv4Hdr>(EthHdr::LEN).map_err(|_| ())?;
-    let packet_info = PacketInfo::new(&ipv4hdr, ctx.data_end() - ctx.data())?;
+    let packet_info = PacketInfo::new(
+        &ipv4hdr,
+        ctx.data_end()-ctx.data(),
+    )?;
     let ip_header_length = (ipv4hdr.ihl() as usize) * 4;
     let hdr_offset = EthHdr::LEN + ip_header_length;
 
@@ -84,11 +87,50 @@ fn process_transport_packet<T: NetworkHeader>(
     Ok(TC_ACT_PIPE)
 }
 
+/*
+IPv4 -> Flags (3 bits) + Fragment Offset (13 bits)
+
+1) R: Reserved bits (must be 0)
+2) DF: Don't Fragment
+3) MF: More Fragments
+
+  bit15 bit14 bit13 | bit12 ........ bit0
++-------------------+---------------------+
+|  R    DF    MF    |   Fragment Offset   |
++-------------------+---------------------+
+                    |
+                    | Move 13 positions to the right
+                    ↓
+[ 0 0 0 0 0 0 0 0 0 0 0 0 0 bit2 bit1 bit0 ]
+                             R    DF   MF
+
+ */
+#[inline(always)]
+fn extract_ip_flags(ip: &Ipv4Hdr) -> u8 {
+    // frag_off (16 bits): [ f2 f1 f0 | offset offset ... offset ]
+    // & 0x7（0b111）-> & 0000 0111
+    //  -> [0000 0000 0000 f2 f1 f0]
+    let flags = (ip.frag_off >> 13) & 0x7;
+    let df = ((flags & 0b010) != 0) as u8; // bit1 → DF
+    let mf = ((flags & 0b001) != 0) as u8; // bit0 → MF
+
+    // | Return Value | Binary | Meaning                |
+    // |--------------|--------|------------------------|
+    // | 0            | 00     | No Fragmentation       |
+    // | 1            | 01     | More Fragments (MF)    |
+    // | 2            | 10     | Don't Fragment (DF)    |
+    // | 3            | 11     | DF + MF (rarely occurs)|
+    (df << 1) | mf
+}
+
 struct PacketInfo {
     ipv4_source: u32,
     ipv4_destination: u32,
     data_length: u16,
     protocol: u8,
+
+    ttl: u8,
+    ip_flags: u8,
 }
 
 impl PacketInfo {
@@ -98,6 +140,8 @@ impl PacketInfo {
             ipv4_destination: ipv4hdr.dst_addr,
             data_length: data_length as u16,
             protocol: ipv4hdr.proto as u8,
+            ttl: ipv4hdr.ttl,
+            ip_flags: extract_ip_flags(ipv4hdr),
         })
     }
 
@@ -118,6 +162,9 @@ impl PacketInfo {
             header.sequence_number_ack(),
             header.icmp_type(),
             header.icmp_code(),
+
+            self.ttl,
+            self.ip_flags,
         )
     }
 }

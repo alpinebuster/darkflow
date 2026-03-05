@@ -61,22 +61,4 @@ else
   echo "  sudo apt install linux-tools-5.8.0-63-generic"
 fi
 
-
-echo "========== Building eBPF programs =========="
-
-cargo xtask ebpf-ipv4
-cargo xtask ebpf-ipv6
-
-# Release builds
-cargo xtask ebpf-ipv4 --release
-cargo xtask ebpf-ipv6 --release
-
-echo "========== Building user space programs =========="
-
-cargo build
-
-# Release build
-cargo build --release
-
-echo "========== Done =========="
-echo "Environment setup and build completed successfully!"
+echo "========== Setup completed =========="

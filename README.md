@@ -82,6 +82,7 @@ darkflow --config-file <filename> realtime <interface> [--only-ingress]
 
 ```bash
 darkflow -c <filename> pcap <path to pcap file>
+./target/release/darkflow -c ./config.toml pcap ./t.pcap 
 ```
 
 > After saving the configuration file, you can safely reset without changing the configuration file.
@@ -92,34 +93,19 @@ This is an example of a configuration file that you can use to run the tool with
 
 ```toml
 [config]
-features = "CIDDS"
-active_timeout = 522
-idle_timeout = 885855
-early_export = 25
-expiration_check_interval = 0
-
-[output]
-output = "Csv"
-export_path = "path/to/output.csv"
-header = false
-drop_contaminant_features = true
-```
-
-Example 2:
-
-```toml
-[config]
-features = "Nfstream"
-active_timeout = 3600
-idle_timeout = 120
-early_export = 10
+features = "Darkflow"    # FlowType can be one of: Basic, CIC, CIDDS, Nfstream, RustiFlow, DarkFlow, Custom
+active_timeout = 3600    # Maximum time a flow is allowed to last in seconds
+idle_timeout = 120       # Maximum time with no packets for a flow in seconds
+early_export = 300       # Optional, print interval for open flows in seconds
+threads = 4              # Number of threads to use for processing packets, optional
 expiration_check_interval = 60
-threads = 8
 
 [output]
-output = "Print"
-header = true
-drop_contaminant_features = false
+output = "Csv"                       # OutputMethodType can be one of: Print, Csv
+export_path = "output.csv"           # Path for output if method is Csv
+header = true                        # Whether to export the feature header
+drop_contaminant_features = false    # Whether to drop contaminant features
+performance_mode = true
 ```
 
 ## Using the Container:
@@ -145,7 +131,7 @@ Make sure that you don't use docker desktop and that you don't have it installed
 
 ## Installation Guide for development
 
-Use `./setup_and_build.sh` script directly to setup deps and `darkflow` builds is recommended!
+Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkflow` binary is recommended!
 
 ### Prerequisites:
 

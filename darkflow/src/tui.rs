@@ -28,7 +28,7 @@ impl Config {
     fn reset() -> Self {
         Config {
             config: ExportConfig {
-                features: FlowType::Basic,
+                features: FlowType::Darkflow,
                 active_timeout: 3600,
                 idle_timeout: 120,
                 early_export: None,
@@ -36,11 +36,11 @@ impl Config {
                 expiration_check_interval: 60,
             },
             output: OutputConfig {
-                output: ExportMethodType::Print,
+                output: ExportMethodType::Csv,
                 export_path: None,
-                header: false,
+                header: true,
                 drop_contaminant_features: false,
-                performance_mode: false,
+                performance_mode: true,
             },
             command: Commands::Realtime {
                 interface: String::from("eth0"),

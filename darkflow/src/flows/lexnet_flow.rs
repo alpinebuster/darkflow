@@ -9,7 +9,6 @@ use super::{
     util::FlowExpireCause,
 };
 
-
 /*
 Multivariate Time Series (MTS) classification traffic features.
 

@@ -49,6 +49,9 @@ impl Default for PacketFeatures {
             icmp_type: None,
             icmp_code: None,
             flags: 0,
+            ttl: 0,
+            ip_df: 0,
+            ip_mf: 0,
         }
     }
 }
@@ -77,6 +80,10 @@ pub struct PacketFeatures {
     pub icmp_type: Option<u8>,
     pub icmp_code: Option<u8>,
     pub flags: u8,
+
+    pub ttl: u8,
+    pub ip_df: u8,
+    pub ip_mf: u8,
 }
 
 impl PacketFeatures {
@@ -114,6 +121,10 @@ impl PacketFeatures {
                 None
             },
             flags: event.combined_flags,
+
+            ttl: event.ttl,
+            ip_df: (event.ip_flags >> 1) & 1,
+            ip_mf: event.ip_flags & 1,
         }
     }
 
@@ -151,11 +162,23 @@ impl PacketFeatures {
                 None
             },
             flags: event.combined_flags,
+
+            ttl: event.hop_limit,
+            ip_df: if event.ipv6_is_fragmented == 1 {0} else {1},
+            ip_mf: event.mf,
         }
     }
 
     // Constructor to create PacketFeatures from an IPv4 packet
     pub fn from_ipv4_packet(packet: &Ipv4Packet, timestamp_us: i64) -> Option<Self> {
+        let ttl = packet.get_ttl();
+        let flags = packet.get_flags();
+        // bit 0    | bit 1 | bit 2
+        // ------------------------
+        // Reserved | DF    | MF
+        let df = ((flags & 0b010) != 0) as u8;
+        let mf = ((flags & 0b001) != 0) as u8;
+
         extract_packet_features_transport(
             packet.get_source().into(),
             packet.get_destination().into(),
@@ -163,11 +186,17 @@ impl PacketFeatures {
             timestamp_us,
             packet.get_total_length(),
             packet.payload(),
+            ttl,
+            df,
+            mf,
         )
     }
 
     // Constructor to create PacketFeatures from an IPv6 packet
     pub fn from_ipv6_packet(packet: &Ipv6Packet, timestamp_us: i64) -> Option<Self> {
+        let ttl = packet.get_hop_limit();
+        let (is_fragmented, mf) = parse_ipv6_frag_flags(packet);
+
         extract_packet_features_transport(
             packet.get_source().into(),
             packet.get_destination().into(),
@@ -175,6 +204,9 @@ impl PacketFeatures {
             timestamp_us,
             packet.packet().len() as u16,
             packet.payload(),
+            ttl,
+            if is_fragmented == 1 {0} else {1},
+            mf,
         )
     }
 
@@ -243,6 +275,9 @@ fn extract_packet_features_transport(
     timestamp_us: i64,
     total_length: u16,
     packet: &[u8],
+    ttl: u8,
+    df: u8,
+    mf: u8,
 ) -> Option<PacketFeatures> {
     match protocol {
         IpNextHeaderProtocols::Tcp => {
@@ -271,6 +306,9 @@ fn extract_packet_features_transport(
                 icmp_type: None,
                 icmp_code: None,
                 flags: tcp_packet.get_flags(),
+                ttl,
+                ip_df: df,
+                ip_mf: mf,
             })
         }
         IpNextHeaderProtocols::Udp => {
@@ -299,6 +337,9 @@ fn extract_packet_features_transport(
                 icmp_type: None,
                 icmp_code: None,
                 flags: 0, // No flags for UDP
+                ttl: 0,
+                ip_df: 0,
+                ip_mf: 0,
             })
         }
         IpNextHeaderProtocols::Icmp | IpNextHeaderProtocols::Icmpv6 => {
@@ -327,6 +368,9 @@ fn extract_packet_features_transport(
                 icmp_type: Some(icmp_packet.get_icmp_type().0),
                 icmp_code: Some(icmp_packet.get_icmp_code().0),
                 flags: 0, // No flags for ICMP
+                ttl: 0,
+                ip_df: 0,
+                ip_mf: 0,
             })
         }
         _ => {
@@ -334,4 +378,91 @@ fn extract_packet_features_transport(
             None
         }
     }
+}
+
+fn is_extension_header(proto: IpNextHeaderProtocol) -> bool {
+    matches!(
+        proto,
+        IpNextHeaderProtocols::Hopopt // 0 Hop-by-Hop
+        | IpNextHeaderProtocols::Ipv6Route // 43 Routing
+        | IpNextHeaderProtocols::Ipv6Frag // 44 Fragment
+        | IpNextHeaderProtocols::Esp // 50 ESP
+        | IpNextHeaderProtocols::Ah // 51 Auth
+        | IpNextHeaderProtocols::Ipv6Opts // 60 Destination Options
+        | IpNextHeaderProtocols::MobilityHeader // 135 Mobility
+        | IpNextHeaderProtocols::Hip // 139 HIP
+        | IpNextHeaderProtocols::Shim6 // 140 Shim6
+    )
+}
+
+/*
+Fragment Header format (RFC 8200)
+  1) M: More Fragments -≈> IPv4 MF
+  2) Whether `Fragment Extension Header` exists -> DF
+
+  NOTE: 
+    a) Fragment Header -> Reserved
+    b) Ordinary expansion header -> Hdr Ext Len
+
+   0                    1                    2                    3
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |  Next Header  |   Reserved    |      Fragment Offset    |Res|M|
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                         Identification                        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+ */
+fn parse_ipv6_frag_flags(ipv6: &Ipv6Packet) -> (u8, u8) {
+    let mut next_hdr = ipv6.get_next_header();
+    let mut payload = ipv6.payload();
+    let mut mf = 0u8;
+    let mut ipv6_is_fragmented = 0u8; // DF IPv6 replacement
+
+    // Traverse the extension header chain, with a maximum extension headers to prevent infinite loops
+    const MAX_EXT_HEADERS: usize = 8; // Arbitrary safe limit
+    for _ in 0..MAX_EXT_HEADERS {
+        if payload.is_empty() {
+            break;
+        }
+
+        // Fragment Header
+        if next_hdr == IpNextHeaderProtocols::Ipv6Frag {
+            if payload.len() >= 8 {
+                // frag_off_and_flags = Bytes 2 to 3
+                let frag_off_and_flags = u16::from_be_bytes([payload[2], payload[3]]);
+                mf = if (frag_off_and_flags & 0b1) != 0 { 1 } else { 0 };
+                ipv6_is_fragmented = 1;
+
+                // Next header = Bytes 0
+                next_hdr = IpNextHeaderProtocol(payload[0]);
+                // Move the payload pointer and skip the Fragment Header (fixed at 8 bytes)
+                payload = &payload[8..];
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        // Exit without extension headers
+        if !is_extension_header(next_hdr) {
+            break;
+        }
+
+        // The extension Header should be at least 2 bytes (Next Header + Hdr Ext Len)*8
+        // Fragment Header -> Reserved
+        // Ordinary expansion header -> Hdr Ext Len
+        // If it is less than 2 bytes, it indicates that the package is abnormal or has reached the end, and exit the loop directly
+        if payload.len() < 2 {
+            break;
+        }
+        let hdr_ext_len = payload[1] as usize;
+        let ext_len_bytes = (hdr_ext_len + 1) * 8;
+        if ext_len_bytes > payload.len() {
+            break;
+        }
+
+        next_hdr = IpNextHeaderProtocol(payload[0]);
+        payload = &payload[ext_len_bytes..];
+    }
+
+    (ipv6_is_fragmented, mf)
 }

@@ -21,6 +21,9 @@ pub struct EbpfEventIpv4 {
     pub icmp_type: u8,
     pub icmp_code: u8,
     pub _padding: [u8; 1],
+
+    pub ttl: u8,
+    pub ip_flags: u8, // DF or MF
 }
 
 impl EbpfEventIpv4 {
@@ -39,6 +42,8 @@ impl EbpfEventIpv4 {
         sequence_number_ack: u32,
         icmp_type: u8,
         icmp_code: u8,
+        ttl: u8,
+        ip_flags: u8,
     ) -> Self {
         EbpfEventIpv4 {
             ipv4_destination,
@@ -56,6 +61,8 @@ impl EbpfEventIpv4 {
             icmp_type,
             icmp_code,
             _padding: [0; 1],
+            ttl,
+            ip_flags,
         }
     }
 }
@@ -82,6 +89,10 @@ pub struct EbpfEventIpv6 {
     pub icmp_type: u8,
     pub icmp_code: u8,
     pub _padding: [u8; 9],
+
+    pub hop_limit: u8, // IPv6 TTL
+    pub ipv6_is_fragmented: u8,
+    pub mf: u8, // From `Fragment Header`
 }
 
 impl EbpfEventIpv6 {
@@ -100,6 +111,9 @@ impl EbpfEventIpv6 {
         sequence_number_ack: u32,
         icmp_type: u8,
         icmp_code: u8,
+        hop_limit: u8, // IPv6 TTL
+        ipv6_is_fragmented: u8,
+        mf: u8,
     ) -> Self {
         EbpfEventIpv6 {
             ipv6_destination,
@@ -117,6 +131,9 @@ impl EbpfEventIpv6 {
             icmp_type,
             icmp_code,
             _padding: [0; 9],
+            hop_limit,
+            ipv6_is_fragmented,
+            mf,
         }
     }
 }

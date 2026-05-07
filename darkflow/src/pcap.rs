@@ -132,6 +132,11 @@ where
                 }
                 _ => {
                     // Check if it is a Linux cooked capture
+                    if packet.data.len() < 16 {
+                        debug!("Packet too short for Linux cooked capture header");
+                        continue;
+                    }
+
                     let ethertype = u16::from_be_bytes([packet.data[14], packet.data[15]]);
                     match ethertype {
                         SLL_IPV4 => {
@@ -215,7 +220,7 @@ where
 async fn process_packet<T, P>(
     packet: &P,
     timestamp_us: i64,
-    shard_senders: &Vec<mpsc::Sender<PacketFeatures>>,
+    shard_senders: &[mpsc::Sender<PacketFeatures>],
     num_shards: u8,
     extractor: fn(&P, i64) -> Option<PacketFeatures>,
 ) where
@@ -223,7 +228,7 @@ async fn process_packet<T, P>(
     P: Packet,
 {
     if let Some(packet_features) = extractor(packet, timestamp_us) {
-        let flow_key = packet_features.biflow_key();
+        let flow_key = packet_features.biflow_key_value();
         let shard_index = compute_shard_index(&flow_key, num_shards);
 
         if let Err(e) = shard_senders[shard_index].send(packet_features).await {
@@ -235,7 +240,7 @@ async fn process_packet<T, P>(
     }
 }
 
-fn compute_shard_index(flow_key: &str, num_shards: u8) -> usize {
+fn compute_shard_index<H: Hash>(flow_key: &H, num_shards: u8) -> usize {
     assert!(num_shards > 0, "num_shards must be greater than 0");
     let mut hasher = DefaultHasher::new();
     flow_key.hash(&mut hasher);

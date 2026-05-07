@@ -2,10 +2,14 @@
 
 pub use network_types::{icmp::IcmpHdr, tcp::TcpHdr, udp::UdpHdr};
 
-/// BasicFeaturesIpv4 is a struct collection all ipv4 traffic data and is 32 bytes in size.
+pub const REALTIME_EVENT_QUEUE_COUNT: usize = 8;
+pub const REALTIME_EVENT_RINGBUF_BYTES: u32 = 1024 * 1024 * 64;
+
+/// BasicFeaturesIpv4 is a struct collection all ipv4 traffic data.
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct EbpfEventIpv4 {
+    pub timestamp_ns: u64,
     pub ipv4_destination: u32,
     pub ipv4_source: u32,
     pub port_destination: u16,
@@ -27,7 +31,9 @@ pub struct EbpfEventIpv4 {
 }
 
 impl EbpfEventIpv4 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        timestamp_ns: u64,
         ipv4_destination: u32,
         ipv4_source: u32,
         port_destination: u16,
@@ -46,6 +52,7 @@ impl EbpfEventIpv4 {
         ip_flags: u8,
     ) -> Self {
         EbpfEventIpv4 {
+            timestamp_ns,
             ipv4_destination,
             ipv4_source,
             port_destination,
@@ -70,10 +77,11 @@ impl EbpfEventIpv4 {
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for EbpfEventIpv4 {}
 
-/// BasicFeaturesIpv6 is a struct collection all ipv6 traffic data and is 64 bytes in size.
+/// BasicFeaturesIpv6 is a struct collection all ipv6 traffic data.
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct EbpfEventIpv6 {
+    pub timestamp_ns: u64,
     pub ipv6_destination: u128,
     pub ipv6_source: u128,
     pub port_destination: u16,
@@ -96,7 +104,9 @@ pub struct EbpfEventIpv6 {
 }
 
 impl EbpfEventIpv6 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        timestamp_ns: u64,
         ipv6_destination: u128,
         ipv6_source: u128,
         port_destination: u16,
@@ -116,6 +126,7 @@ impl EbpfEventIpv6 {
         mf: u8,
     ) -> Self {
         EbpfEventIpv6 {
+            timestamp_ns,
             ipv6_destination,
             ipv6_source,
             port_destination,
@@ -161,10 +172,10 @@ impl NetworkHeader for TcpHdr {
         self.dest
     }
     fn window_size(&self) -> u16 {
-        self.window as u16
+        self.window
     }
     fn combined_flags(&self) -> u8 {
-        ((self.fin() as u8) << 0)
+        (self.fin() as u8)
             | ((self.syn() as u8) << 1)
             | ((self.rst() as u8) << 2)
             | ((self.psh() as u8) << 3)
@@ -174,7 +185,7 @@ impl NetworkHeader for TcpHdr {
             | ((self.cwr() as u8) << 7)
     }
     fn header_length(&self) -> u8 {
-        TcpHdr::LEN as u8
+        (self.doff() * 4) as u8
     }
     fn sequence_number(&self) -> u32 {
         self.seq

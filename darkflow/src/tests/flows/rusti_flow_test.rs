@@ -1,182 +1,286 @@
 #[cfg(test)]
 mod tests {
-    use std::net::{IpAddr, Ipv4Addr};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    use crate::flows::{flow::Flow, rusti_flow::RustiFlow};
+    use crate::{
+        flows::{
+            basic_flow::TcpCloseStyle,
+            flow::Flow,
+            rusti_flow::RustiFlow,
+            util::{IpScope, PathLocality},
+        },
+        packet_features::{PacketFeatures, ACK_FLAG, SYN_FLAG},
+    };
 
     fn setup_rusti_flow() -> RustiFlow {
-        RustiFlow::new(
-            "".to_string(),
-            IpAddr::V4(Ipv4Addr::from(1)),
-            80,
-            IpAddr::V4(Ipv4Addr::from(2)),
-            8080,
-            6,
-            chrono::Utc::now(),
+        setup_rusti_flow_with_endpoints(
+            IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(172, 16, 0, 2)),
         )
     }
 
-    #[test]
-    fn test_update_fwd_pkt_len_stats() {
-        let mut rusti_flow = setup_rusti_flow();
+    fn setup_rusti_flow_with_endpoints(source_ip: IpAddr, destination_ip: IpAddr) -> RustiFlow {
+        RustiFlow::new(
+            "rusti-flow".to_string(),
+            source_ip,
+            44444,
+            destination_ip,
+            443,
+            6,
+            1_000_000,
+        )
+    }
 
-        rusti_flow.cic_flow.basic_flow.fwd_packet_count = 1;
+    fn count_csv_fields(row: &str) -> usize {
+        row.split(',').count()
+    }
 
-        rusti_flow.update_fwd_header_len_stats(100);
-
-        assert_eq!(rusti_flow.fwd_header_len_max, 100);
-        assert_eq!(rusti_flow.fwd_header_len_min, 100);
-        assert_eq!(rusti_flow.fwd_header_len_mean, 100.0);
-        assert_eq!(rusti_flow.fwd_header_len_std, 0.0);
-        assert_eq!(rusti_flow.cic_flow.fwd_header_length, 100);
-
-        rusti_flow.cic_flow.basic_flow.fwd_packet_count = 2;
-
-        rusti_flow.update_fwd_header_len_stats(50);
-
-        assert_eq!(rusti_flow.fwd_header_len_max, 100);
-        assert_eq!(rusti_flow.fwd_header_len_min, 50);
-        assert_eq!(rusti_flow.fwd_header_len_mean, 75.0);
-        assert_eq!(rusti_flow.fwd_header_len_std, 25.0);
-        assert_eq!(rusti_flow.cic_flow.fwd_header_length, 150);
-
-        rusti_flow.cic_flow.basic_flow.fwd_packet_count = 3;
-
-        rusti_flow.update_fwd_header_len_stats(0);
-
-        assert_eq!(rusti_flow.fwd_header_len_max, 100);
-        assert_eq!(rusti_flow.fwd_header_len_min, 0);
-        assert_eq!(rusti_flow.fwd_header_len_mean, 50.0);
-        assert_eq!(rusti_flow.fwd_header_len_std, 40.824829046386306);
-        assert_eq!(rusti_flow.cic_flow.fwd_header_length, 150);
+    fn packet(
+        source_ip: IpAddr,
+        source_port: u16,
+        destination_ip: IpAddr,
+        destination_port: u16,
+        timestamp_us: i64,
+    ) -> PacketFeatures {
+        PacketFeatures {
+            source_ip,
+            destination_ip,
+            source_port,
+            destination_port,
+            protocol: 6,
+            timestamp_us,
+            window_size: 4096,
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn test_update_bwd_pkt_len_stats() {
-        let mut rusti_flow = setup_rusti_flow();
+    fn dump_matches_feature_headers() {
+        let flow = setup_rusti_flow();
 
-        rusti_flow.cic_flow.basic_flow.bwd_packet_count = 1;
-
-        rusti_flow.update_bwd_header_len_stats(100);
-
-        assert_eq!(rusti_flow.bwd_header_len_max, 100);
-        assert_eq!(rusti_flow.bwd_header_len_min, 100);
-        assert_eq!(rusti_flow.bwd_header_len_mean, 100.0);
-        assert_eq!(rusti_flow.bwd_header_len_std, 0.0);
-        assert_eq!(rusti_flow.cic_flow.bwd_header_length, 100);
-
-        rusti_flow.cic_flow.basic_flow.bwd_packet_count = 2;
-
-        rusti_flow.update_bwd_header_len_stats(50);
-
-        assert_eq!(rusti_flow.bwd_header_len_max, 100);
-        assert_eq!(rusti_flow.bwd_header_len_min, 50);
-        assert_eq!(rusti_flow.bwd_header_len_mean, 75.0);
-        assert_eq!(rusti_flow.bwd_header_len_std, 25.0);
-        assert_eq!(rusti_flow.cic_flow.bwd_header_length, 150);
-
-        rusti_flow.cic_flow.basic_flow.bwd_packet_count = 3;
-
-        rusti_flow.update_bwd_header_len_stats(0);
-
-        assert_eq!(rusti_flow.bwd_header_len_max, 100);
-        assert_eq!(rusti_flow.bwd_header_len_min, 0);
-        assert_eq!(rusti_flow.bwd_header_len_mean, 50.0);
-        assert_eq!(rusti_flow.bwd_header_len_std, 40.824829046386306);
-        assert_eq!(rusti_flow.cic_flow.bwd_header_length, 150);
-    }
-
-    #[test]
-    fn test_get_fwd_header_length_min() {
-        let mut cic_flow = setup_rusti_flow();
-
-        assert_eq!(cic_flow.get_fwd_header_length_min(), 0);
-
-        cic_flow.fwd_header_len_min = 50;
-
-        assert_eq!(cic_flow.get_fwd_header_length_min(), 50);
-    }
-
-    #[test]
-    fn test_get_bwd_header_length_min() {
-        let mut cic_flow = setup_rusti_flow();
-
-        assert_eq!(cic_flow.get_bwd_header_length_min(), 0);
-
-        cic_flow.bwd_header_len_min = 100;
-
-        assert_eq!(cic_flow.get_bwd_header_length_min(), 100);
-    }
-
-    #[test]
-    fn test_get_flow_packet_length_min() {
-        let mut cic_flow = setup_rusti_flow();
-
-        cic_flow.fwd_header_len_min = 100;
-        cic_flow.bwd_header_len_min = 50;
-
-        assert_eq!(cic_flow.get_flow_header_length_min(), 50);
-    }
-
-    #[test]
-    fn test_get_flow_packet_length_max() {
-        let mut cic_flow = setup_rusti_flow();
-
-        cic_flow.fwd_header_len_max = 100;
-        cic_flow.bwd_header_len_max = 50;
-
-        assert_eq!(cic_flow.get_flow_header_length_max(), 100);
-    }
-
-    #[test]
-    fn test_get_flow_packet_length_mean() {
-        let mut cic_flow = setup_rusti_flow();
-
-        //let forward_iat = [10, 20, 30, 40, 50];
-        //let backward_iat = [15, 25, 35];
-
-        cic_flow.fwd_header_len_mean = 30.0;
-        cic_flow.bwd_header_len_mean = 25.0;
-
-        cic_flow.cic_flow.basic_flow.fwd_packet_count = 5;
-        cic_flow.cic_flow.basic_flow.bwd_packet_count = 3;
-
-        assert_eq!(cic_flow.get_flow_header_length_mean(), 28.125);
-    }
-
-    #[test]
-    fn test_get_flow_packet_length_variance() {
-        let mut cic_flow = setup_rusti_flow();
-
-        //let forward_iat = [10, 20, 30, 40, 50];
-        //let backward_iat = [15, 25, 35];
-
-        cic_flow.fwd_header_len_std = 14.142135623731;
-        cic_flow.bwd_header_len_std = 8.1649658092773;
-
-        cic_flow.cic_flow.basic_flow.fwd_packet_count = 5;
-        cic_flow.cic_flow.basic_flow.bwd_packet_count = 3;
-
-        assert_eq!(cic_flow.get_flow_header_length_variance() as u32, 155); // removing everything behind the comma because of arithmetic errors
-    }
-
-    #[test]
-    fn test_get_flow_packet_length_std() {
-        let mut cic_flow = setup_rusti_flow();
-        let epsilon = 1e-1; // floating-point arithmetic is not exact, here we have a lot of casting and the formula is also an approximation
-
-        //let forward_iat = [10, 20, 30, 40, 50];
-        //let backward_iat = [15, 25, 35];
-
-        cic_flow.fwd_header_len_std = 14.142135623731;
-        cic_flow.bwd_header_len_std = 8.1649658092773;
-
-        cic_flow.cic_flow.basic_flow.fwd_packet_count = 5;
-        cic_flow.cic_flow.basic_flow.bwd_packet_count = 3;
-
-        assert!(
-            (cic_flow.get_flow_header_length_std() - 12.484365222149).abs() < epsilon,
-            "get_flow_packet_length_std is not within the expected range"
+        assert_eq!(count_csv_fields(&RustiFlow::get_features()), 203);
+        assert_eq!(
+            count_csv_fields(&flow.dump()),
+            count_csv_fields(&RustiFlow::get_features())
         );
+        assert_eq!(
+            count_csv_fields(&flow.dump_without_contamination()),
+            count_csv_fields(&RustiFlow::get_features_without_contamination())
+        );
+    }
+
+    #[test]
+    fn rusti_flow_classifies_ip_scope_and_path_locality_across_endpoint_types() {
+        let cases = [
+            (
+                IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+                IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+                4,
+                IpScope::Private,
+                IpScope::Private,
+                PathLocality::Private,
+            ),
+            (
+                IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+                IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+                4,
+                IpScope::Shared,
+                IpScope::Global,
+                PathLocality::Mixed,
+            ),
+            (
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                IpAddr::V4(Ipv4Addr::LOCALHOST),
+                4,
+                IpScope::Loopback,
+                IpScope::Loopback,
+                PathLocality::Loopback,
+            ),
+            (
+                IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)),
+                IpAddr::V4(Ipv4Addr::new(169, 254, 1, 2)),
+                4,
+                IpScope::LinkLocal,
+                IpScope::LinkLocal,
+                PathLocality::LinkLocal,
+            ),
+            (
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+                IpAddr::V6(Ipv6Addr::LOCALHOST),
+                6,
+                IpScope::Loopback,
+                IpScope::Loopback,
+                PathLocality::Loopback,
+            ),
+            (
+                IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2)),
+                6,
+                IpScope::Private,
+                IpScope::Private,
+                PathLocality::Private,
+            ),
+            (
+                IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 2)),
+                6,
+                IpScope::LinkLocal,
+                IpScope::LinkLocal,
+                PathLocality::LinkLocal,
+            ),
+            (
+                IpAddr::V6(Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1)),
+                IpAddr::V6(Ipv6Addr::new(0x2001, 0x4860, 0, 0, 0, 0, 0, 8888)),
+                6,
+                IpScope::Multicast,
+                IpScope::Global,
+                PathLocality::Multicast,
+            ),
+        ];
+
+        for (
+            source_ip,
+            destination_ip,
+            ip_version,
+            source_scope,
+            destination_scope,
+            path_locality,
+        ) in cases
+        {
+            let flow = setup_rusti_flow_with_endpoints(source_ip, destination_ip);
+
+            assert_eq!(
+                (
+                    flow.basic_flow.get_ip_version(),
+                    flow.basic_flow.get_source_ip_scope(),
+                    flow.basic_flow.get_destination_ip_scope(),
+                    flow.basic_flow.get_path_locality(),
+                ),
+                (ip_version, source_scope, destination_scope, path_locality)
+            );
+        }
+    }
+
+    #[test]
+    fn rusti_flow_exports_endpoint_scope_and_path_locality_in_both_schemas() {
+        let flow = setup_rusti_flow_with_endpoints(
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+        );
+
+        let full_fields: Vec<_> = flow.dump().split(',').map(str::to_string).collect();
+        let clean_fields: Vec<_> = flow
+            .dump_without_contamination()
+            .split(',')
+            .map(str::to_string)
+            .collect();
+
+        assert_eq!(
+            &full_fields[..10],
+            &[
+                "rusti-flow".to_string(),
+                "100.64.0.1".to_string(),
+                "44444".to_string(),
+                "8.8.8.8".to_string(),
+                "443".to_string(),
+                "6".to_string(),
+                "4".to_string(),
+                "shared".to_string(),
+                "global".to_string(),
+                "mixed".to_string(),
+            ]
+        );
+        assert_eq!(
+            &clean_fields[..7],
+            &[
+                "registered".to_string(),
+                "well-known".to_string(),
+                "6".to_string(),
+                "4".to_string(),
+                "shared".to_string(),
+                "global".to_string(),
+                "mixed".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn rusti_flow_updates_lifecycle_timing_and_retransmission_features_together() {
+        let source_ip = IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1));
+        let destination_ip = IpAddr::V4(Ipv4Addr::new(172, 16, 0, 2));
+        let mut flow = setup_rusti_flow();
+
+        let mut syn = packet(source_ip, 44444, destination_ip, 443, 1_000_100);
+        syn.syn_flag = 1;
+        syn.flags = SYN_FLAG;
+        assert!(!flow.update_flow(&syn, true));
+
+        let mut syn_ack = packet(destination_ip, 443, source_ip, 44444, 1_000_200);
+        syn_ack.syn_flag = 1;
+        syn_ack.ack_flag = 1;
+        syn_ack.flags = SYN_FLAG | ACK_FLAG;
+        syn_ack.sequence_number = 700;
+        assert!(!flow.update_flow(&syn_ack, false));
+
+        let mut ack = packet(source_ip, 44444, destination_ip, 443, 1_000_300);
+        ack.ack_flag = 1;
+        ack.flags = ACK_FLAG;
+        ack.sequence_number_ack = 701;
+        assert!(!flow.update_flow(&ack, true));
+
+        let mut data = packet(source_ip, 44444, destination_ip, 443, 1_001_000);
+        data.ack_flag = 1;
+        data.flags = ACK_FLAG;
+        data.sequence_number = 100;
+        data.sequence_number_ack = 701;
+        data.data_length = 100;
+        assert!(!flow.update_flow(&data, true));
+
+        let mut ack_bwd = packet(destination_ip, 443, source_ip, 44444, 1_001_500);
+        ack_bwd.ack_flag = 1;
+        ack_bwd.flags = ACK_FLAG;
+        ack_bwd.sequence_number = 701;
+        ack_bwd.sequence_number_ack = 200;
+        assert!(!flow.update_flow(&ack_bwd, false));
+
+        let mut duplicate_ack_bwd = packet(destination_ip, 443, source_ip, 44444, 1_001_650);
+        duplicate_ack_bwd.ack_flag = 1;
+        duplicate_ack_bwd.flags = ACK_FLAG;
+        duplicate_ack_bwd.sequence_number = 702;
+        duplicate_ack_bwd.sequence_number_ack = 200;
+        assert!(!flow.update_flow(&duplicate_ack_bwd, false));
+
+        let mut zero_window_bwd = packet(destination_ip, 443, source_ip, 44444, 1_001_700);
+        zero_window_bwd.ack_flag = 1;
+        zero_window_bwd.flags = ACK_FLAG;
+        zero_window_bwd.sequence_number = 703;
+        zero_window_bwd.sequence_number_ack = 200;
+        zero_window_bwd.window_size = 0;
+        assert!(!flow.update_flow(&zero_window_bwd, false));
+
+        let mut overlap = packet(source_ip, 44444, destination_ip, 443, 1_001_800);
+        overlap.ack_flag = 1;
+        overlap.flags = ACK_FLAG;
+        overlap.sequence_number = 150;
+        overlap.sequence_number_ack = 701;
+        overlap.data_length = 100;
+        assert!(!flow.update_flow(&overlap, true));
+
+        assert!(flow.basic_flow.tcp_handshake_completed);
+        assert_eq!(flow.basic_flow.tcp_close_style, TcpCloseStyle::None);
+        assert_eq!(flow.retransmission_stats.fwd_retransmission_count, 1);
+        assert_eq!(flow.retransmission_stats.bwd_retransmission_count, 0);
+        assert_eq!(flow.tcp_quality_stats.fwd_duplicate_ack_count, 0);
+        assert_eq!(flow.tcp_quality_stats.bwd_duplicate_ack_count, 1);
+        assert_eq!(flow.tcp_quality_stats.fwd_zero_window_count, 0);
+        assert_eq!(flow.tcp_quality_stats.bwd_zero_window_count, 1);
+        assert_eq!(flow.iat_stats.iat.get_count(), 7);
+        assert_eq!(flow.iat_stats.fwd_iat.get_count(), 3);
+        assert_eq!(flow.iat_stats.bwd_iat.get_count(), 3);
+        assert_eq!(flow.subflow_stats.subflow_count, 1);
+        assert!((flow.timing_stats.get_fwd_duration() - 1.7).abs() < f64::EPSILON);
+        assert!((flow.timing_stats.get_bwd_duration() - 1.5).abs() < f64::EPSILON);
+        assert_eq!(flow.payload_len_stats.fwd_non_zero_payload_packets, 2);
+        assert_eq!(flow.payload_len_stats.bwd_non_zero_payload_packets, 0);
     }
 }

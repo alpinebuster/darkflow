@@ -1,6 +1,6 @@
 use crate::{flows::util::FlowExpireCause, packet_features::PacketFeatures};
 
-use super::util::{FeatureStats, FlowFeature};
+use super::util::{push_csv_display, FeatureStats, FlowFeature};
 
 #[derive(Clone)]
 pub struct PacketLengthStats {
@@ -18,31 +18,29 @@ impl PacketLengthStats {
 
     pub fn flow_min(&self) -> f64 {
         if self.fwd_packet_len.get_count() > 0 && self.bwd_packet_len.get_count() > 0 {
-            return self
-                .fwd_packet_len
+            self.fwd_packet_len
                 .get_min()
-                .min(self.bwd_packet_len.get_min());
+                .min(self.bwd_packet_len.get_min())
         } else if self.fwd_packet_len.get_count() > 0 {
-            return self.fwd_packet_len.get_min();
+            self.fwd_packet_len.get_min()
         } else if self.bwd_packet_len.get_count() > 0 {
-            return self.bwd_packet_len.get_min();
+            self.bwd_packet_len.get_min()
         } else {
-            return 0.0;
+            0.0
         }
     }
 
     pub fn flow_max(&self) -> f64 {
         if self.fwd_packet_len.get_count() > 0 && self.bwd_packet_len.get_count() > 0 {
-            return self
-                .fwd_packet_len
+            self.fwd_packet_len
                 .get_max()
-                .max(self.bwd_packet_len.get_max());
+                .max(self.bwd_packet_len.get_max())
         } else if self.fwd_packet_len.get_count() > 0 {
-            return self.fwd_packet_len.get_max();
+            self.fwd_packet_len.get_max()
         } else if self.bwd_packet_len.get_count() > 0 {
-            return self.bwd_packet_len.get_max();
+            self.bwd_packet_len.get_max()
         } else {
-            return 0.0;
+            0.0
         }
     }
 
@@ -83,15 +81,13 @@ impl PacketLengthStats {
         // Merge the variances
         //  [ n1*var1 + n2*var2
         //  + n1*(mean1 - combined_mean)^2 + n2*(mean2 - combined_mean)^2 ] / n
-        let merged_variance = {
+        {
             let sum_of_variances = n1 as f64 * var1 + n2 as f64 * var2;
             let sum_of_squares = n1 as f64 * (mean1 - combined_mean).powi(2)
                 + n2 as f64 * (mean2 - combined_mean).powi(2);
 
             (sum_of_variances + sum_of_squares) / (n as f64)
-        };
-
-        merged_variance
+        }
     }
 
     pub fn flow_std(&self) -> f64 {
@@ -126,6 +122,19 @@ impl FlowFeature for PacketLengthStats {
             self.fwd_packet_len.dump_values(),
             self.bwd_packet_len.dump_values(),
         )
+    }
+
+    fn append_to_csv(&self, output: &mut String) {
+        push_csv_display(output, self.flow_count());
+        push_csv_display(output, self.flow_total());
+        push_csv_display(output, self.flow_mean());
+        push_csv_display(output, self.flow_max());
+        push_csv_display(output, self.flow_min());
+        push_csv_display(output, self.flow_std());
+        push_csv_display(output, self.fwd_packet_len.get_count());
+        push_csv_display(output, self.bwd_packet_len.get_count());
+        self.fwd_packet_len.append_csv_values(output);
+        self.bwd_packet_len.append_csv_values(output);
     }
 
     fn headers() -> String {

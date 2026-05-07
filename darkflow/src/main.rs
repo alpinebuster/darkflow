@@ -1,12 +1,26 @@
 mod args;
+mod export_profile;
+mod flow_key;
 mod flow_table;
+#[cfg(target_os = "linux")]
 mod flow_tui;
 mod flows;
 mod output;
+#[cfg(target_os = "linux")]
 mod packet_counts;
 mod packet_features;
 mod pcap;
+#[cfg(target_os = "linux")]
+mod profiling;
+#[cfg(not(target_os = "linux"))]
+#[path = "profiling_stub.rs"]
+mod profiling;
+#[cfg(target_os = "linux")]
 mod realtime;
+#[cfg(not(target_os = "linux"))]
+#[path = "realtime_stub.rs"]
+mod realtime;
+mod realtime_mode;
 mod tests;
 mod tui;
 
@@ -21,9 +35,14 @@ use flows::{
 };
 use log::{debug, error, info};
 use output::OutputWriter;
+use profiling::ProfilingSession;
+use realtime_mode::packet_graph_mode;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tui::{launch_tui, Config};
+
+const DEFAULT_OFFLINE_THREADS: u8 = 5;
+const DEFAULT_REALTIME_THREADS: u8 = 12;
 
 #[tokio::main]
 async fn main() {
@@ -75,7 +94,7 @@ async fn main() {
                     export_path: cli.export_path,
                     header: cli.header,
                     drop_contaminant_features: cli.drop_contaminant_features,
-                    performance_mode: cli.performance_mode,
+                    packet_graph: cli.packet_graph,
                 },
                 command: cli.command,
             }
@@ -95,7 +114,7 @@ async fn run_with_config(config: Config) {
             macro_rules! execute_realtime {
                 ($flow_ty:ty) => {{
                     // Create output writer and initialize it
-                    let performance_mode_disabled = config.output.export_path.is_some() && !matches!(std::env::var("RUST_LOG"), Ok(ref val) if val.contains("debug")) && !config.output.performance_mode;
+                    let packet_graph_mode = packet_graph_mode(&config.output);
 
                     let mut output_writer = OutputWriter::<$flow_ty>::new(
                         config.output.output,
@@ -127,16 +146,23 @@ async fn run_with_config(config: Config) {
 
                     debug!("Starting realtime processing...");
                     let start = Instant::now();
+                    let profiling_session = match ProfilingSession::start_from_env("realtime") {
+                        Ok(session) => session,
+                        Err(err) => {
+                            error!("Error starting profiler: {:?}", err);
+                            None
+                        }
+                    };
                     let result = handle_realtime::<$flow_ty>(
                         &interface,
                         sender,
-                        std::cmp::min(config.config.threads.unwrap_or(5), num_cpus::get() as u8),
+                        resolve_realtime_threads(config.config.threads),
                         config.config.active_timeout,
                         config.config.idle_timeout,
                         config.config.early_export,
                         config.config.expiration_check_interval,
                         ingress_only,
-                        performance_mode_disabled,
+                        packet_graph_mode,
                     )
                     .await;
 
@@ -144,6 +170,14 @@ async fn run_with_config(config: Config) {
                     if let Err(e) = output_task.await {
                         error!("Error waiting for output task: {:?}", e);
                     }
+
+                    if let Some(profiling_session) = profiling_session {
+                        if let Err(err) = profiling_session.finish() {
+                            error!("Error finishing profiler: {:?}", err);
+                        }
+                    }
+
+                    export_profile::log_summary("realtime");
 
                     let end = Instant::now();
                     info!(
@@ -209,11 +243,18 @@ async fn run_with_config(config: Config) {
                     });
 
                     let start = Instant::now();
+                    let profiling_session = match ProfilingSession::start_from_env("offline") {
+                        Ok(session) => session,
+                        Err(err) => {
+                            error!("Error starting profiler: {:?}", err);
+                            None
+                        }
+                    };
 
                     if let Err(err) = read_pcap_file::<$flow_ty>(
                         &path,
                         sender,
-                        std::cmp::min(config.config.threads.unwrap_or(5), num_cpus::get() as u8),
+                        resolve_offline_threads(config.config.threads),
                         config.config.active_timeout,
                         config.config.idle_timeout,
                         config.config.early_export,
@@ -228,6 +269,14 @@ async fn run_with_config(config: Config) {
                     output_task.await.unwrap_or_else(|e| {
                         error!("Error waiting for output task: {:?}", e);
                     });
+
+                    export_profile::log_summary("offline");
+
+                    if let Some(profiling_session) = profiling_session {
+                        if let Err(err) = profiling_session.finish() {
+                            error!("Error finishing profiler: {:?}", err);
+                        }
+                    }
 
                     let end = Instant::now();
                     debug!(
@@ -249,4 +298,20 @@ async fn run_with_config(config: Config) {
             }
         }
     }
+}
+
+fn resolve_realtime_threads(config_threads: Option<u8>) -> u8 {
+    let logical_cpus = num_cpus::get() as u8;
+    std::cmp::min(
+        config_threads.unwrap_or(DEFAULT_REALTIME_THREADS),
+        logical_cpus,
+    )
+}
+
+fn resolve_offline_threads(config_threads: Option<u8>) -> u8 {
+    let logical_cpus = num_cpus::get() as u8;
+    std::cmp::min(
+        config_threads.unwrap_or(DEFAULT_OFFLINE_THREADS),
+        logical_cpus,
+    )
 }

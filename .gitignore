@@ -11,6 +11,7 @@ Cargo.lock
 
 # testing files
 testing/
+vwall-testing.md
 
 darkflow.toml
 
@@ -23,4 +24,5 @@ darkflow.toml
 
 __pycache__
 *.pcap*
+!darkflow/tests/data/*.pcap
 *.csv

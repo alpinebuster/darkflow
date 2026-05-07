@@ -1,6 +1,6 @@
 use crate::{flows::util::FlowExpireCause, packet_features::PacketFeatures};
 
-use super::util::{FeatureStats, FlowFeature};
+use super::util::{push_csv_display, FeatureStats, FlowFeature};
 
 const MIN_BULK_PACKETS: u32 = 4;
 const BULK_IDLE_MS: i64 = 1000;
@@ -116,7 +116,7 @@ impl FlowFeature for BulkStats {
         let current_ts = packet.timestamp_us / 1000;
         // 1. Skip zero-length packets
         let packet_len = packet.length;
-        if packet_len <= 0 {
+        if packet_len == 0 {
             return;
         }
 
@@ -180,6 +180,19 @@ impl FlowFeature for BulkStats {
             self.fwd_bulk_duration.dump_values(),
             self.bwd_bulk_duration.dump_values(),
         )
+    }
+
+    fn append_to_csv(&self, output: &mut String) {
+        push_csv_display(output, self.fwd_bulk_rate());
+        push_csv_display(output, self.bwd_bulk_rate());
+        push_csv_display(output, self.fwd_bulk_packets.get_count());
+        push_csv_display(output, self.bwd_bulk_packets.get_count());
+        self.fwd_bulk_packets.append_csv_values(output);
+        self.bwd_bulk_packets.append_csv_values(output);
+        self.fwd_bulk_payload_size.append_csv_values(output);
+        self.bwd_bulk_payload_size.append_csv_values(output);
+        self.fwd_bulk_duration.append_csv_values(output);
+        self.bwd_bulk_duration.append_csv_values(output);
     }
 
     fn headers() -> String {

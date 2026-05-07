@@ -1,14 +1,16 @@
-use crate::{args::ExportMethodType, flows::flow::Flow};
+use crate::{args::ExportMethodType, export_profile, flows::flow::Flow};
 use log::{debug, error};
 use std::{
     fs::File,
     io::{BufWriter, Write},
+    time::Instant,
 };
 
 pub struct OutputWriter<T> {
     write_header: bool,
     skip_contaminant_features: bool,
-    writer: Box<dyn Write + Send>,
+    writer: BufWriter<Box<dyn Write + Send>>,
+    row_buffer: String,
     _phantom_data: std::marker::PhantomData<T>,
 }
 
@@ -22,21 +24,22 @@ where
         skip_contaminant_features: bool,
         file_path: Option<String>,
     ) -> Self {
-        let writer: Box<dyn Write + Send> = match export_type {
+        let writer: BufWriter<Box<dyn Write + Send>> = match export_type {
             ExportMethodType::Csv => {
                 let path = file_path
                     .clone()
                     .expect("File path required for CSV output");
                 let file = File::create(&path).expect("Failed to create file");
-                Box::new(BufWriter::new(file))
+                BufWriter::new(Box::new(file))
             }
-            ExportMethodType::Print => Box::new(std::io::stdout()) as Box<dyn Write + Send>,
+            ExportMethodType::Print => BufWriter::new(Box::new(std::io::stdout())),
         };
 
         OutputWriter {
             write_header,
             skip_contaminant_features,
             writer,
+            row_buffer: String::with_capacity(4096),
             _phantom_data: std::marker::PhantomData,
         }
     }
@@ -52,13 +55,20 @@ where
     }
 
     pub fn write_flow(&mut self, flow: T) -> std::io::Result<()> {
-        let flow_str = if self.skip_contaminant_features {
-            flow.dump_without_contamination()
+        let dump_start = Instant::now();
+        self.row_buffer.clear();
+        if self.skip_contaminant_features {
+            flow.append_to_csv_row_without_contamination(&mut self.row_buffer);
         } else {
-            flow.dump()
-        };
+            flow.append_to_csv_row(&mut self.row_buffer);
+        }
+        export_profile::record_dump(dump_start.elapsed(), self.row_buffer.len());
 
-        writeln!(self.writer, "{}", flow_str)
+        let write_start = Instant::now();
+        self.writer.write_all(self.row_buffer.as_bytes())?;
+        self.writer.write_all(b"\n")?;
+        export_profile::record_write(write_start.elapsed());
+        Ok(())
     }
 
     /// Flushes the writer and closes the output file
@@ -75,6 +85,7 @@ where
         } else {
             T::get_features()
         };
-        writeln!(self.writer, "{}", header)
+        self.writer.write_all(header.as_bytes())?;
+        self.writer.write_all(b"\n")
     }
 }

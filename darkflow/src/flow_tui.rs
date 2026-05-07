@@ -41,7 +41,7 @@ impl App {
     fn get_bar_data(&self) -> Vec<u64> {
         self.packet_data
             .iter()
-            .map(|data| data.count )
+            .map(|data| data.count)
             .take(self.max_visible_intervals)
             .collect()
     }
@@ -80,15 +80,14 @@ async fn run_app<B: Backend>(
         tokio::select! {
             Ok(_) = packet_rx.changed() => {
                 let counts = packet_rx.borrow();
-                app.update_packet_data(&*counts);
+                app.update_packet_data(&counts);
             }
 
             poll_result = task::spawn_blocking(|| crossterm::event::poll(Duration::from_millis(100))) => {
                 if poll_result?? {
                     if let Event::Key(key) = event::read()? {
-                        match key.code {
-                            KeyCode::Char('q') => return Ok(()),
-                            _ => {}
+                        if let KeyCode::Char('q') = key.code {
+                            return Ok(());
                         }
                     }
                 }

@@ -1,8 +1,15 @@
 use std::net::IpAddr;
+use std::{fmt::Display, fmt::Write as _};
 
 use chrono::{DateTime, Utc};
+use pnet::packet::ip::IpNextHeaderProtocols;
 
-use crate::{flows::util::iana_port_mapping, packet_features::PacketFeatures};
+use crate::{
+    flows::util::{
+        classify_ip_scope, classify_path_locality, iana_port_mapping, IpScope, PathLocality,
+    },
+    packet_features::PacketFeatures,
+};
 
 use super::{flow::Flow, util::FlowExpireCause};
 
@@ -11,6 +18,31 @@ pub(crate) enum FlowState {
     Established,
     FinSent,
     FinAcked,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum TcpCloseStyle {
+    NotApplicable,
+    None,
+    HalfClose,
+    BidirectionalFin,
+    FourWayFin,
+    SimultaneousFin,
+    Reset,
+}
+
+impl TcpCloseStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::NotApplicable => "not_applicable",
+            Self::None => "none",
+            Self::HalfClose => "half_close",
+            Self::BidirectionalFin => "bidirectional_fin",
+            Self::FourWayFin => "four_way_fin",
+            Self::SimultaneousFin => "simultaneous_fin",
+            Self::Reset => "reset",
+        }
+    }
 }
 
 /// A basic flow that stores the basic features of a flow.
@@ -40,9 +72,74 @@ pub struct BasicFlow {
     pub(crate) state_bwd: FlowState,
     expected_ack_seq_fwd: Option<u32>,
     expected_ack_seq_bwd: Option<u32>,
+    saw_syn_fwd: bool,
+    saw_syn_ack_bwd: bool,
+    expected_handshake_ack_seq_fwd: Option<u32>,
+    pub tcp_handshake_completed: bool,
+    pub tcp_reset_before_handshake: bool,
+    pub tcp_reset_after_handshake: bool,
+    pub tcp_close_style: TcpCloseStyle,
+    saw_fin_fwd: bool,
+    saw_fin_bwd: bool,
+    tcp_simultaneous_close: bool,
 }
 
 impl BasicFlow {
+    fn is_tcp(&self) -> bool {
+        self.protocol == IpNextHeaderProtocols::Tcp.0
+    }
+
+    fn observe_tcp_handshake(&mut self, packet: &PacketFeatures, forward: bool) {
+        if !self.is_tcp() || self.tcp_handshake_completed {
+            return;
+        }
+
+        if forward && packet.syn_flag > 0 && packet.ack_flag == 0 {
+            self.saw_syn_fwd = true;
+            self.saw_syn_ack_bwd = false;
+            self.expected_handshake_ack_seq_fwd = None;
+            return;
+        }
+
+        if !forward && self.saw_syn_fwd && packet.syn_flag > 0 && packet.ack_flag > 0 {
+            self.saw_syn_ack_bwd = true;
+            self.expected_handshake_ack_seq_fwd = Some(packet.sequence_number + 1);
+            return;
+        }
+
+        if forward
+            && self.saw_syn_fwd
+            && self.saw_syn_ack_bwd
+            && packet.ack_flag > 0
+            && packet.syn_flag == 0
+            && Some(packet.sequence_number_ack) == self.expected_handshake_ack_seq_fwd
+        {
+            self.tcp_handshake_completed = true;
+        }
+    }
+
+    fn update_tcp_close_style(&mut self, cause: FlowExpireCause) {
+        self.tcp_close_style = if !self.is_tcp() {
+            TcpCloseStyle::NotApplicable
+        } else if cause == FlowExpireCause::TcpReset {
+            TcpCloseStyle::Reset
+        } else if self.saw_fin_fwd && self.saw_fin_bwd {
+            if self.state_fwd == FlowState::FinAcked && self.state_bwd == FlowState::FinAcked {
+                if self.tcp_simultaneous_close {
+                    TcpCloseStyle::SimultaneousFin
+                } else {
+                    TcpCloseStyle::FourWayFin
+                }
+            } else {
+                TcpCloseStyle::BidirectionalFin
+            }
+        } else if self.saw_fin_fwd || self.saw_fin_bwd {
+            TcpCloseStyle::HalfClose
+        } else {
+            TcpCloseStyle::None
+        };
+    }
+
     /// Checks if the flow is finished.
     ///
     /// A flow is considered finished when both FIN flags are set and the last ACK is received,
@@ -59,10 +156,18 @@ impl BasicFlow {
         // Update state when receiving FIN flag
         if packet.fin_flag > 0 {
             if forward {
+                if self.state_bwd == FlowState::FinSent {
+                    self.tcp_simultaneous_close = true;
+                }
+                self.saw_fin_fwd = true;
                 self.state_fwd = FlowState::FinSent;
                 self.expected_ack_seq_bwd =
                     Some(packet.sequence_number + packet.data_length as u32 + 1);
             } else {
+                if self.state_fwd == FlowState::FinSent {
+                    self.tcp_simultaneous_close = true;
+                }
+                self.saw_fin_bwd = true;
                 self.state_bwd = FlowState::FinSent;
                 self.expected_ack_seq_fwd =
                     Some(packet.sequence_number + packet.data_length as u32 + 1);
@@ -114,6 +219,32 @@ impl BasicFlow {
     pub fn get_first_timestamp(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_micros(self.first_timestamp_us).unwrap()
     }
+
+    pub fn get_ip_version(&self) -> u8 {
+        match self.ip_source {
+            IpAddr::V4(_) => 4,
+            IpAddr::V6(_) => 6,
+        }
+    }
+
+    pub fn get_source_ip_scope(&self) -> IpScope {
+        classify_ip_scope(self.ip_source)
+    }
+
+    pub fn get_destination_ip_scope(&self) -> IpScope {
+        classify_ip_scope(self.ip_destination)
+    }
+
+    pub fn get_path_locality(&self) -> PathLocality {
+        classify_path_locality(self.ip_source, self.ip_destination)
+    }
+}
+
+fn push_csv_display(output: &mut String, value: impl Display) {
+    if !output.is_empty() {
+        output.push(',');
+    }
+    let _ = write!(output, "{value}");
 }
 
 impl Flow for BasicFlow {
@@ -140,65 +271,77 @@ impl Flow for BasicFlow {
             state_bwd: FlowState::Established,
             expected_ack_seq_fwd: None,
             expected_ack_seq_bwd: None,
+            saw_syn_fwd: false,
+            saw_syn_ack_bwd: false,
+            expected_handshake_ack_seq_fwd: None,
+            tcp_handshake_completed: false,
+            tcp_reset_before_handshake: false,
+            tcp_reset_after_handshake: false,
+            tcp_close_style: TcpCloseStyle::None,
+            saw_fin_fwd: false,
+            saw_fin_bwd: false,
+            tcp_simultaneous_close: false,
         }
     }
 
     fn update_flow(&mut self, packet: &PacketFeatures, fwd: bool) -> bool {
         self.last_timestamp_us = packet.timestamp_us;
+        self.observe_tcp_handshake(packet, fwd);
 
         if self.is_tcp_finished(packet, fwd) {
             self.flow_expire_cause = FlowExpireCause::TcpTermination;
+            self.update_tcp_close_style(self.flow_expire_cause);
             return true;
         }
 
-        if packet.rst_flag > 0 {
+        if self.is_tcp() && packet.rst_flag > 0 {
+            if self.tcp_handshake_completed {
+                self.tcp_reset_after_handshake = true;
+            } else {
+                self.tcp_reset_before_handshake = true;
+            }
             self.flow_expire_cause = FlowExpireCause::TcpReset;
+            self.update_tcp_close_style(self.flow_expire_cause);
             return true;
         }
 
         false
     }
 
-    fn close_flow(&mut self, _timestamp_us: i64, _cause: FlowExpireCause) -> () {
-        // No active state to close
+    fn close_flow(&mut self, _timestamp_us: i64, cause: FlowExpireCause) {
+        self.flow_expire_cause = cause;
+        self.update_tcp_close_style(cause);
     }
 
-    fn dump(&self) -> String {
-        format!(
-            "{},{},{},{},{},{},{},{},{},{}",
-            self.flow_key,
-            self.ip_source,
-            self.port_source,
-            self.ip_destination,
-            self.port_destination,
-            self.protocol,
-            self.get_first_timestamp(),
-            self.get_last_timestamp(),
-            self.get_flow_duration_usec(),
-            self.flow_expire_cause.as_str()
-        )
+    fn append_to_csv_row(&self, output: &mut String) {
+        push_csv_display(output, &self.flow_key);
+        push_csv_display(output, self.ip_source);
+        push_csv_display(output, self.port_source);
+        push_csv_display(output, self.ip_destination);
+        push_csv_display(output, self.port_destination);
+        push_csv_display(output, self.protocol);
+        push_csv_display(output, self.get_first_timestamp());
+        push_csv_display(output, self.get_last_timestamp());
+        push_csv_display(output, self.get_flow_duration_usec());
+        push_csv_display(output, self.flow_expire_cause.as_str());
     }
 
     fn get_features() -> String {
-        format!(
-            "flow_id,source_ip,source_port,destination_ip,destination_port,protocol,\
+        "flow_id,source_ip,source_port,destination_ip,destination_port,protocol,\
             first_timestamp,last_timestamp,duration,flow_expire_cause"
-        )
+            .to_string()
     }
 
-    fn dump_without_contamination(&self) -> String {
-        format!(
-            "{},{},{},{},{}",
-            iana_port_mapping(self.port_source),
-            iana_port_mapping(self.port_destination),
-            self.protocol,
-            self.get_flow_duration_usec(),
-            self.flow_expire_cause.as_str(),
-        )
+    fn append_to_csv_row_without_contamination(&self, output: &mut String) {
+        push_csv_display(output, iana_port_mapping(self.port_source));
+        push_csv_display(output, iana_port_mapping(self.port_destination));
+        push_csv_display(output, self.protocol);
+        push_csv_display(output, self.get_flow_duration_usec());
+        push_csv_display(output, self.flow_expire_cause.as_str());
     }
 
     fn get_features_without_contamination() -> String {
-        format!("src_port_iana,dst_port_iana,protocol,duration,flow_expire_cause")
+        "src_port_iana,dst_port_iana,protocol,duration,flow_expire_cause".to_string()
     }
 
     fn get_first_timestamp_us(&self) -> i64 {
@@ -224,9 +367,5 @@ impl Flow for BasicFlow {
         }
 
         (false, FlowExpireCause::None)
-    }
-
-    fn flow_key(&self) -> &String {
-        &self.flow_key
     }
 }

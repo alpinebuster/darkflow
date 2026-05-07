@@ -1,6 +1,8 @@
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+#[cfg(target_os = "linux")]
+use std::net::Ipv6Addr;
+use std::net::{IpAddr, Ipv4Addr};
 
-use chrono::Utc;
+#[cfg(target_os = "linux")]
 use common::{EbpfEventIpv4, EbpfEventIpv6};
 use log::debug;
 use pnet::packet::{
@@ -12,6 +14,8 @@ use pnet::packet::{
     udp::UdpPacket,
     Packet,
 };
+
+use crate::flow_key::FlowKey;
 
 // Define TCP flags
 pub const FIN_FLAG: u8 = 0b00000001;
@@ -31,7 +35,7 @@ impl Default for PacketFeatures {
             source_port: 0,
             destination_port: 0,
             protocol: 0,
-            timestamp_us: Utc::now().timestamp_micros(),
+            timestamp_us: 0,
             fin_flag: 0,
             syn_flag: 0,
             rst_flag: 0,
@@ -87,15 +91,16 @@ pub struct PacketFeatures {
 }
 
 impl PacketFeatures {
+    #[cfg(target_os = "linux")]
     // Constructor to create PacketFeatures from EbpfEventIpv4
-    pub fn from_ebpf_event_ipv4(event: &EbpfEventIpv4) -> Self {
+    pub fn from_ebpf_event_ipv4(event: &EbpfEventIpv4, realtime_offset_us: i64) -> Self {
         PacketFeatures {
             source_ip: IpAddr::V4(Ipv4Addr::from(event.ipv4_source.to_be())),
             destination_ip: IpAddr::V4(Ipv4Addr::from(event.ipv4_destination.to_be())),
             source_port: event.port_source,
             destination_port: event.port_destination,
             protocol: event.protocol,
-            timestamp_us: chrono::Utc::now().timestamp_micros(),
+            timestamp_us: monotonic_ns_to_epoch_us(event.timestamp_ns, realtime_offset_us),
             fin_flag: get_tcp_flag(event.combined_flags, FIN_FLAG),
             syn_flag: get_tcp_flag(event.combined_flags, SYN_FLAG),
             rst_flag: get_tcp_flag(event.combined_flags, RST_FLAG),
@@ -128,15 +133,16 @@ impl PacketFeatures {
         }
     }
 
+    #[cfg(target_os = "linux")]
     // Constructor to create PacketFeatures from EbpfEventIpv6
-    pub fn from_ebpf_event_ipv6(event: &EbpfEventIpv6) -> Self {
+    pub fn from_ebpf_event_ipv6(event: &EbpfEventIpv6, realtime_offset_us: i64) -> Self {
         PacketFeatures {
             source_ip: IpAddr::V6(Ipv6Addr::from(event.ipv6_source.to_be())),
             destination_ip: IpAddr::V6(Ipv6Addr::from(event.ipv6_destination.to_be())),
             source_port: event.port_source,
             destination_port: event.port_destination,
             protocol: event.protocol,
-            timestamp_us: chrono::Utc::now().timestamp_micros(),
+            timestamp_us: monotonic_ns_to_epoch_us(event.timestamp_ns, realtime_offset_us),
             fin_flag: get_tcp_flag(event.combined_flags, FIN_FLAG),
             syn_flag: get_tcp_flag(event.combined_flags, SYN_FLAG),
             rst_flag: get_tcp_flag(event.combined_flags, RST_FLAG),
@@ -171,6 +177,10 @@ impl PacketFeatures {
 
     // Constructor to create PacketFeatures from an IPv4 packet
     pub fn from_ipv4_packet(packet: &Ipv4Packet, timestamp_us: i64) -> Option<Self> {
+        if packet.get_fragment_offset() > 0 {
+            return None;
+        }
+
         let ttl = packet.get_ttl();
         let flags = packet.get_flags();
         // bit 0    | bit 1 | bit 2
@@ -194,78 +204,105 @@ impl PacketFeatures {
 
     // Constructor to create PacketFeatures from an IPv6 packet
     pub fn from_ipv6_packet(packet: &Ipv6Packet, timestamp_us: i64) -> Option<Self> {
+        let (protocol, payload) = skip_ipv6_extension_headers(packet)?;
+
         let ttl = packet.get_hop_limit();
         let (is_fragmented, mf) = parse_ipv6_frag_flags(packet);
 
         extract_packet_features_transport(
             packet.get_source().into(),
             packet.get_destination().into(),
-            packet.get_next_header(),
+            protocol,
             timestamp_us,
             packet.packet().len() as u16,
-            packet.payload(),
+            payload,
             ttl,
             if is_fragmented == 1 {0} else {1},
             mf,
         )
     }
 
-    /// Generates a flow key based on IPs, ports, and protocol
-    pub fn flow_key(&self) -> String {
-        format!(
-            "{}:{}-{}:{}-{}",
+    pub fn flow_key_value(&self) -> FlowKey {
+        FlowKey::new(
             self.source_ip,
             self.source_port,
             self.destination_ip,
             self.destination_port,
-            self.protocol
+            self.protocol,
         )
     }
 
-    /// Generates a flow key based on IPs, ports, and protocol in the reverse direction
-    pub fn flow_key_bwd(&self) -> String {
-        format!(
-            "{}:{}-{}:{}-{}",
-            self.destination_ip,
-            self.destination_port,
-            self.source_ip,
-            self.source_port,
-            self.protocol
-        )
-    }
-
-    /// Generates a biflow key
-    pub fn biflow_key(&self) -> String {
-        // Create tuples of (IP, port) for comparison
-        let src = (&self.source_ip, self.source_port);
-        let dst = (&self.destination_ip, self.destination_port);
-
-        // Determine the correct order (src < dst)
-        if src < dst {
-            format!(
-                "{}:{}-{}:{}-{}",
-                self.source_ip,
-                self.source_port,
-                self.destination_ip,
-                self.destination_port,
-                self.protocol
-            )
-        } else {
-            // If destination IP/port is "smaller", swap the order
-            format!(
-                "{}:{}-{}:{}-{}",
-                self.destination_ip,
-                self.destination_port,
-                self.source_ip,
-                self.source_port,
-                self.protocol
-            )
-        }
+    pub fn biflow_key_value(&self) -> FlowKey {
+        self.flow_key_value().canonical()
     }
 }
 
 fn get_tcp_flag(value: u8, flag: u8) -> u8 {
     ((value & flag) != 0) as u8
+}
+
+#[cfg(target_os = "linux")]
+fn monotonic_ns_to_epoch_us(timestamp_ns: u64, realtime_offset_us: i64) -> i64 {
+    realtime_offset_us + (timestamp_ns / 1_000) as i64
+}
+
+fn skip_ipv6_extension_headers<'a>(
+    packet: &'a Ipv6Packet<'a>,
+) -> Option<(IpNextHeaderProtocol, &'a [u8])> {
+    const MAX_EXTENSION_HEADERS: usize = 8;
+    const HOP_BY_HOP: u8 = 0;
+    const ROUTING: u8 = 43;
+    const FRAGMENT: u8 = 44;
+    const ESP: u8 = 50;
+    const AUTHENTICATION: u8 = 51;
+    const DESTINATION_OPTIONS: u8 = 60;
+    const MOBILITY: u8 = 135;
+    const HIP: u8 = 139;
+    const SHIM6: u8 = 140;
+
+    let mut next_header = packet.get_next_header();
+    let mut payload = packet.payload();
+
+    for _ in 0..MAX_EXTENSION_HEADERS {
+        let header_len = match next_header.0 {
+            HOP_BY_HOP | ROUTING | DESTINATION_OPTIONS | MOBILITY | HIP | SHIM6 => {
+                if payload.len() < 8 {
+                    return None;
+                }
+                (usize::from(payload[1]) + 1) * 8
+            }
+            FRAGMENT => {
+                if payload.len() < 8 {
+                    return None;
+                }
+
+                let fragment_offset_field = u16::from_be_bytes([payload[2], payload[3]]);
+                let fragment_offset = (fragment_offset_field & 0xfff8) >> 3;
+                if fragment_offset > 0 {
+                    return None;
+                }
+
+                8
+            }
+            AUTHENTICATION => {
+                if payload.len() < 8 {
+                    return None;
+                }
+                (usize::from(payload[1]) + 2) * 4
+            }
+            ESP => return None,
+            _ => return Some((next_header, payload)),
+        };
+
+        if payload.len() < header_len {
+            return None;
+        }
+
+        next_header = IpNextHeaderProtocol(payload[0]);
+        payload = &payload[header_len..];
+    }
+
+    Some((next_header, payload))
 }
 
 fn extract_packet_features_transport(
@@ -298,7 +335,7 @@ fn extract_packet_features_transport(
                 cwr_flag: get_tcp_flag(tcp_packet.get_flags(), CWR_FLAG),
                 ece_flag: get_tcp_flag(tcp_packet.get_flags(), ECE_FLAG),
                 data_length: tcp_packet.payload().len() as u16,
-                header_length: (tcp_packet.get_data_offset() * 4) as u8,
+                header_length: tcp_packet.get_data_offset() * 4,
                 length: total_length,
                 window_size: tcp_packet.get_window(),
                 sequence_number: tcp_packet.get_sequence(),
@@ -400,11 +437,11 @@ Fragment Header format (RFC 8200)
   1) M: More Fragments -≈> IPv4 MF
   2) Whether `Fragment Extension Header` exists -> DF
 
-  NOTE: 
+  NOTE:
     a) Fragment Header -> Reserved
     b) Ordinary expansion header -> Hdr Ext Len
 
-   0                    1                    2                    3
+   0                    1                    2                     3
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
    |  Next Header  |   Reserved    |      Fragment Offset    |Res|M|
    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+

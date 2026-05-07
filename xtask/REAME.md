@@ -26,7 +26,7 @@ Generate the eBPF `.o` file
 
 ## Darkflow Traffic Processing Architecture
 
-The traffic processing in the **DarkFlow** project follows this architecture:
+The traffic processing in the **Darkflow** project follows this architecture:
 
 ```
 Network Packet

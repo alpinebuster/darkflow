@@ -19,11 +19,11 @@ jobs:
       with:
         toolchain: nightly
         profile: minimal
-        components: rust-src, llvm-tools-preview
+        components: rust-src, llvm-tools-preview, clippy
         override: true
     - name: Install libpcap-dev
       run: sudo apt install libpcap-dev
-      
+
     - name: Install bpf-linker
       run: cargo install bpf-linker
 
@@ -36,6 +36,9 @@ jobs:
     - name: Build userspace program
       run: cargo build --verbose
 
+    - name: Run Clippy
+      run: cargo clippy -p darkflow --all-targets -- -D warnings
+
     - name: Fetch gh-pages branch
       run: git fetch origin gh-pages:gh-pages
 
@@ -44,10 +47,10 @@ jobs:
         git checkout gh-pages
         mv index.html index.html.backup
         git checkout -
-      
+
     - name: Run tests
       run: cargo test --verbose
-      
+
     - name: Generate documentation
       run: cargo doc --no-deps
 

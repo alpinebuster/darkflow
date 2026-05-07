@@ -1,4 +1,4 @@
-# Dark Flow (DF)
+# Darkflow (DF)
 
 A DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow).
 
@@ -16,10 +16,29 @@ This tool is engineered for robust and efficient feature extraction, particularl
 - **Versatile Feature Sets:** Offers a variety of pre-defined feature sets (flows) and the flexibility to create custom feature sets tailored to specific requirements. An example of the custom flow is shown [here](./darkflow/src/flows/custom_flow.rs).
 - **Pcap File Support:** Facilitates packet analysis from pcap files, compatible with both Linux and Windows generated files.
 - **Diverse Output Options:** Features can be outputted to the console, a CSV file, or other formats with minimal effort.
+- **Richer TCP Quality Signals:** The RustiFlow feature set exports duplicate ACK counts, zero-window observations, and TCP close style in addition to the existing lifecycle and retransmission fields.
+- **Endpoint-Aware IP Context:** The RustiFlow feature set exports `ip_version`, endpoint IP scope, and coarse `path_locality` derived from normalized addresses without expanding the eBPF event payload.
 
 ## Feature sets
 
 See the [wiki](./wiki) for the different feature sets available.
+
+## Supported Packet/Header Coverage
+
+Darkflow currently extracts flows from the following protocol/header combinations:
+
+| Layer | Offline pcap | Realtime eBPF |
+| --- | --- | --- |
+| Link | Ethernet, Linux cooked capture, 802.1Q VLAN | Ethernet |
+| Network | IPv4, IPv6 | IPv4, IPv6 |
+| IPv6 extras | Extension headers supported before transport parsing | Extension headers supported before transport parsing |
+| Transport | TCP, UDP, ICMP, ICMPv6 | TCP, UDP, ICMP, ICMPv6 |
+
+Notes:
+
+- Realtime support is Linux-only.
+- Offline and realtime aim to expose the same flow semantics, but timestamp and packet-length sources can differ slightly.
+- Realtime VLAN parsing is not implemented yet.
 
 ## Architecture
 
@@ -79,8 +98,8 @@ darkflow --config-file <filename> realtime <interface> [--only-ingress]
 ```
 
 ```bash
+# e.g. `./target/release/darkflow -c ./config.toml pcap ./t.pcap`
 darkflow -c <filename> pcap <path to pcap file>
-./target/release/darkflow -c ./config.toml pcap ./t.pcap 
 ```
 
 > After saving the configuration file, you can safely reset without changing the configuration file.
@@ -99,11 +118,25 @@ threads = 4              # Number of threads to use for processing packets, opti
 expiration_check_interval = 60
 
 [output]
-output = "Csv"                       # OutputMethodType can be one of: Print, Csv
-export_path = "output.csv"           # Path for output if method is Csv
-header = true                        # Whether to export the feature header
-drop_contaminant_features = false    # Whether to drop contaminant features
-performance_mode = true
+output = "Csv"                    # OutputMethodType can be one of: Print, Csv
+export_path = "output.csv"        # Path for output if method is Csv
+header = true                     # Whether to export the feature header
+drop_contaminant_features = false # Whether to drop contaminant features
+```
+
+For realtime CSV exports, the live packet graph is now off by default so the
+standard CLI path keeps the best throughput-oriented behavior. Enable it only
+when you want the graph:
+
+```toml
+[output]
+packet_graph = true
+```
+
+or with:
+
+```bash
+darkflow ... -o csv --export-path out.csv --packet-graph realtime <interface>
 ```
 
 ## Using the Container:
@@ -116,18 +149,33 @@ Make sure that you don't use docker desktop and that you don't have it installed
   ```
 - **Run the Container**:
   ```bash
-  docker run --network host -v /path/on/host:/app darkflow [ARGS like you are used to]
+  docker run --rm --network host -v /path/on/host:/app darkflow [ARGS]
   ```
-  Run it with the --privileged flag if you want to capture traffic in real-time.
+  Run it with the `--privileged` flag if you want to capture traffic in real-time.
 - **Example**:
   ```bash
-  docker run --network host -v /home/user/pcap:/app darkflow pcap basic-flow 60 /app/pcap.pcap print
+  docker run --rm --network host -v ./pcap:/app darkflow \
+    -f basic \
+    -o print \
+    pcap /app/pcap.pcap
   ```
   ```bash
-  docker run --privileged --network host -v /home/matisse/Documents:/app darkflow realtime enp5s0 cic-flow 60 csv /app/output.csv
+  docker run --rm --privileged --network host -v ./output:/app darkflow \
+    -f cic \
+    -o csv \
+    --export-path /app/output.csv \
+    realtime enp5s0
   ```
 
-## Installation Guide for development
+Notes:
+
+- The current CLI uses flags such as `-f basic` and `-o csv`; the older
+  positional examples are no longer correct.
+- Realtime capture in a container still depends on Linux host support for eBPF
+  and `tc`, so `--privileged --network host` remains the practical baseline for
+  local testing.
+
+## Development Guide
 
 Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkflow` binary is recommended!
 
@@ -221,10 +269,11 @@ Options:
 
           Possible values:
           - basic:     A basic flow that stores the basic features of a flow
-          - cic:       Represents the CIC Flow, giving 83 features
+          - cic:       Represents the CIC Flow, giving 90 features
           - cidds:     Represents the CIDDS Flow, giving 10 features
-          - nfstream:  Represents a nfstream inspired flow, giving 69 features
-          - rustiflow: Represents the Rusti Flow, giving 120 features
+          - nfstream:  Represents a nfstream inspired flow, giving 71 features
+          - rustiflow: Represents the Rusti Flow, giving 203 features
+          - darkflow:  Represents the sequential traffic features
           - custom:    Represents a flow that you can implement yourself
 
       --active-timeout <ACTIVE_TIMEOUT>
@@ -246,7 +295,7 @@ Options:
           [default: 60]
 
       --threads <THREADS>
-          The numbers of threads to use for processing packets (optional) (default: 5, maximum number of logical CPUs)
+          The numbers of threads to use for processing packets (optional) (default: realtime uses 12, capped at the number of logical CPUs; pcap uses 5; maximum number of logical CPUs)
 
       -o, --output <OUTPUT>
               Output method (required if no config file is provided)
@@ -257,6 +306,10 @@ Options:
 
           --export-path <EXPORT_PATH>
               File path for output (used if method is Csv)
+
+          --packet-graph
+              Enable the realtime packet graph for CSV exports
+              [default: false]
 
           --header
               Whether to export the feature header
@@ -278,6 +331,20 @@ Options:
 
 ```bash
 RUST_LOG=info cargo xtask run --
+```
+
+Run the focused Rust test suite with:
+
+```bash
+cargo test -p darkflow
+```
+
+If you also have the sibling `concap` repository and a reachable Kubernetes cluster,
+you can run a tiny ConCap-backed smoke check and then reprocess the downloaded pcap
+with your current local Darkflow checkout:
+
+```bash
+./scripts/concap_smoke.sh ../concap nmap-tcp-syn-version.yaml
 ```
 
 ### Binary

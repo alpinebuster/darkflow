@@ -4,15 +4,18 @@
 
 use aya_ebpf::{
     bindings::TC_ACT_PIPE,
+    helpers::gen::bpf_ktime_get_ns,
     macros::{classifier, map},
     maps::{PerCpuArray, RingBuf},
     programs::TcContext,
 };
-use aya_log_ebpf::error;
+use aya_log_ebpf::debug;
 
 use common::EbpfEventIpv4;
 use common::IcmpHdr;
 use common::NetworkHeader;
+use common::REALTIME_EVENT_QUEUE_COUNT;
+use common::REALTIME_EVENT_RINGBUF_BYTES;
 use common::TcpHdr;
 use common::UdpHdr;
 use network_types::{
@@ -29,7 +32,34 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 static DROPPED_PACKETS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
 
 #[map]
-static EVENTS_IPV4: RingBuf = RingBuf::with_byte_size(1024 * 1024 * 20, 0); // 20 MB
+static MATCHED_PACKETS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[map]
+static SUBMITTED_EVENTS: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+#[map]
+static EVENTS_IPV4_0: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_1: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_2: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_3: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_4: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_5: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_6: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
+
+#[map]
+static EVENTS_IPV4_7: RingBuf = RingBuf::with_byte_size(REALTIME_EVENT_RINGBUF_BYTES, 0);
 
 #[classifier]
 pub fn tc_flow_track(ctx: TcContext) -> i32 {
@@ -46,11 +76,8 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
     }
 
     let ipv4hdr = ctx.load::<Ipv4Hdr>(EthHdr::LEN).map_err(|_| ())?;
-    let packet_info = PacketInfo::new(
-        &ipv4hdr,
-        ctx.data_end()-ctx.data(),
-    )?;
     let ip_header_length = (ipv4hdr.ihl() as usize) * 4;
+    let packet_info = PacketInfo::new(&ipv4hdr, ip_header_length)?;
     let hdr_offset = EthHdr::LEN + ip_header_length;
 
     match ipv4hdr.proto {
@@ -62,16 +89,108 @@ fn process_packet(ctx: &TcContext) -> Result<i32, ()> {
 }
 
 #[inline(always)]
-fn submit_ipv4_event(ctx: &TcContext, event: EbpfEventIpv4) {
-    if let Some(mut entry) = EVENTS_IPV4.reserve::<EbpfEventIpv4>(0) {
+fn submit_ipv4_event(ctx: &TcContext, event: EbpfEventIpv4, queue_index: u32) {
+    let reserved = match queue_index {
+        0 => reserve_ipv4_event(&EVENTS_IPV4_0, event),
+        1 => reserve_ipv4_event(&EVENTS_IPV4_1, event),
+        2 => reserve_ipv4_event(&EVENTS_IPV4_2, event),
+        3 => reserve_ipv4_event(&EVENTS_IPV4_3, event),
+        4 => reserve_ipv4_event(&EVENTS_IPV4_4, event),
+        5 => reserve_ipv4_event(&EVENTS_IPV4_5, event),
+        6 => reserve_ipv4_event(&EVENTS_IPV4_6, event),
+        _ => reserve_ipv4_event(&EVENTS_IPV4_7, event),
+    };
+
+    if !reserved {
+        increment_dropped_packets();
+        debug!(ctx, "Failed to reserve entry in ring buffer.");
+    }
+}
+
+#[inline(always)]
+fn reserve_ipv4_event(queue: &RingBuf, event: EbpfEventIpv4) -> bool {
+    if let Some(mut entry) = queue.reserve::<EbpfEventIpv4>(0) {
         *entry = core::mem::MaybeUninit::new(event);
         entry.submit(0);
+        increment_counter(&MATCHED_PACKETS);
+        increment_counter(&SUBMITTED_EVENTS);
+        true
     } else {
-        if let Some(counter) = DROPPED_PACKETS.get_ptr_mut(0) {
-            unsafe { *counter += 1 };
-        }
-        error!(ctx, "Failed to reserve entry in ring buffer.");
+        increment_counter(&MATCHED_PACKETS);
+        false
     }
+}
+
+#[inline(always)]
+fn increment_dropped_packets() {
+    increment_counter(&DROPPED_PACKETS);
+}
+
+#[inline(always)]
+fn increment_counter(counter_array: &PerCpuArray<u64>) {
+    if let Some(counter) = counter_array.get_ptr_mut(0) {
+        unsafe { *counter += 1 };
+    }
+}
+
+#[inline(always)]
+fn queue_index_ipv4(packet_info: &PacketInfo, header: &impl NetworkHeader) -> u32 {
+    let (first_ip, first_port, second_ip, second_port) = canonical_ipv4_endpoints(
+        packet_info.ipv4_source,
+        header.source_port(),
+        packet_info.ipv4_destination,
+        header.destination_port(),
+    );
+    let endpoint_ports = (u32::from(first_port) << 16) | u32::from(second_port);
+    let mut hash = 0x811c_9dc5;
+    hash = hash_combine(hash, mix_u32(first_ip));
+    hash = hash_combine(hash, mix_u32(second_ip));
+    hash = hash_combine(hash, endpoint_ports);
+    hash = hash_combine(hash, u32::from(packet_info.protocol));
+    hash = finish_hash32(hash);
+    hash % REALTIME_EVENT_QUEUE_COUNT as u32
+}
+
+#[inline(always)]
+fn canonical_ipv4_endpoints(
+    source_ip: u32,
+    source_port: u16,
+    destination_ip: u32,
+    destination_port: u16,
+) -> (u32, u16, u32, u16) {
+    if source_ip < destination_ip || (source_ip == destination_ip && source_port <= destination_port)
+    {
+        (source_ip, source_port, destination_ip, destination_port)
+    } else {
+        (destination_ip, destination_port, source_ip, source_port)
+    }
+}
+
+#[inline(always)]
+fn mix_u32(mut value: u32) -> u32 {
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x7feb_352d);
+    value ^= value >> 15;
+    value = value.wrapping_mul(0x846c_a68b);
+    value ^ (value >> 16)
+}
+
+#[inline(always)]
+fn hash_combine(state: u32, value: u32) -> u32 {
+    state
+        ^ value
+            .wrapping_add(0x9e37_79b9)
+            .wrapping_add(state << 6)
+            .wrapping_add(state >> 2)
+}
+
+#[inline(always)]
+fn finish_hash32(mut value: u32) -> u32 {
+    value ^= value >> 16;
+    value = value.wrapping_mul(0x85eb_ca6b);
+    value ^= value >> 13;
+    value = value.wrapping_mul(0xc2b2_ae35);
+    value ^ (value >> 16)
 }
 
 fn process_transport_packet<T: NetworkHeader>(
@@ -81,8 +200,9 @@ fn process_transport_packet<T: NetworkHeader>(
 ) -> Result<i32, ()> {
     let hdr = ctx.load::<T>(header_offset).map_err(|_| ())?;
     let packet_log = packet_info.to_packet_log(&hdr);
+    let queue_index = queue_index_ipv4(packet_info, &hdr);
 
-    submit_ipv4_event(ctx, packet_log);
+    submit_ipv4_event(ctx, packet_log, queue_index);
 
     Ok(TC_ACT_PIPE)
 }
@@ -126,7 +246,8 @@ fn extract_ip_flags(ip: &Ipv4Hdr) -> u8 {
 struct PacketInfo {
     ipv4_source: u32,
     ipv4_destination: u32,
-    data_length: u16,
+    total_length: u16,
+    network_header_length: u16,
     protocol: u8,
 
     ttl: u8,
@@ -134,11 +255,12 @@ struct PacketInfo {
 }
 
 impl PacketInfo {
-    fn new(ipv4hdr: &Ipv4Hdr, data_length: usize) -> Result<Self, ()> {
+    fn new(ipv4hdr: &Ipv4Hdr, network_header_length: usize) -> Result<Self, ()> {
         Ok(Self {
             ipv4_source: ipv4hdr.src_addr,
             ipv4_destination: ipv4hdr.dst_addr,
-            data_length: data_length as u16,
+            total_length: u16::from_be(ipv4hdr.tot_len),
+            network_header_length: network_header_length as u16,
             protocol: ipv4hdr.proto as u8,
             ttl: ipv4hdr.ttl,
             ip_flags: extract_ip_flags(ipv4hdr),
@@ -147,17 +269,23 @@ impl PacketInfo {
 
     #[inline(always)]
     fn to_packet_log<T: NetworkHeader>(&self, header: &T) -> EbpfEventIpv4 {
+        let header_length = header.header_length();
+        let data_length = self
+            .total_length
+            .saturating_sub(self.network_header_length + u16::from(header_length));
+
         EbpfEventIpv4::new(
+            unsafe { bpf_ktime_get_ns() },
             self.ipv4_destination,
             self.ipv4_source,
             header.destination_port(),
             header.source_port(),
-            self.data_length,
-            self.data_length + header.header_length() as u16,
+            data_length,
+            self.total_length,
             header.window_size(),
             header.combined_flags(),
             self.protocol,
-            header.header_length(),
+            header_length,
             header.sequence_number(),
             header.sequence_number_ack(),
             header.icmp_type(),

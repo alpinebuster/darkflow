@@ -1,290 +1,386 @@
 #[cfg(test)]
 mod tests {
-    use chrono::{Duration, Utc};
     use std::net::{IpAddr, Ipv4Addr};
 
     use crate::{
         flows::{
-            basic_flow::{BasicFlow, FlowState},
+            basic_flow::{BasicFlow, TcpCloseStyle},
             flow::Flow,
+            util::FlowExpireCause,
         },
         packet_features::PacketFeatures,
     };
 
-    #[test]
-    fn test_basic_flow_creation() {
-        let ip_src = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        let ip_dst = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let flow = BasicFlow::new(
-            "flow1".to_string(),
-            ip_src,
-            8080,
-            ip_dst,
-            80,
-            6, // TCP protocol
-            Utc::now(),
-        );
-
-        assert_eq!(flow.flow_key, "flow1");
-        assert_eq!(flow.ip_source, ip_src);
-        assert_eq!(flow.port_source, 8080);
-        assert_eq!(flow.ip_destination, ip_dst);
-        assert_eq!(flow.port_destination, 80);
-        assert_eq!(flow.protocol, 6);
-        assert_eq!(flow.fwd_packet_count, 0);
-        assert_eq!(flow.bwd_packet_count, 0);
+    fn build_packet(
+        source_ip: IpAddr,
+        source_port: u16,
+        destination_ip: IpAddr,
+        destination_port: u16,
+        timestamp_us: i64,
+    ) -> PacketFeatures {
+        PacketFeatures {
+            source_ip,
+            destination_ip,
+            source_port,
+            destination_port,
+            protocol: 6,
+            timestamp_us,
+            ..Default::default()
+        }
     }
 
     #[test]
-    fn test_basic_flow_update_forward() {
-        let ip_src = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        let ip_dst = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+    fn close_flow_records_expiration_cause() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20));
         let mut flow = BasicFlow::new(
-            "flow1".to_string(),
-            ip_src,
-            8080,
-            ip_dst,
-            80,
-            6, // TCP protocol
-            Utc::now(),
+            "flow-1".to_string(),
+            ip_source,
+            4242,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
         );
 
-        let packet = PacketFeatures {
-            source_ip: ip_src,
-            destination_ip: ip_dst,
-            source_port: 8080,
-            destination_port: 80,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 0,
-            syn_flag: 1,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 0,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 1,
-            sequence_number_ack: 0,
-        };
+        flow.close_flow(2_000_000, FlowExpireCause::IdleTimeout);
 
-        let flow_ended = flow.update_flow(&packet, true);
-        assert!(!flow_ended);
-        assert_eq!(flow.fwd_packet_count, 1);
-        assert_eq!(flow.fwd_syn_flag_count, 1);
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::IdleTimeout);
     }
 
     #[test]
-    fn test_basic_flow_update_backward() {
-        let ip_src = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        let ip_dst = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+    fn tcp_fin_handshake_terminates_flow() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
         let mut flow = BasicFlow::new(
-            "flow1".to_string(),
-            ip_src,
-            8080,
-            ip_dst,
+            "flow-2".to_string(),
+            ip_source,
+            50000,
+            ip_destination,
             80,
-            6, // TCP protocol
-            Utc::now(),
+            6,
+            1_000_000,
         );
 
-        let packet = PacketFeatures {
-            source_ip: ip_dst,
-            destination_ip: ip_src,
-            source_port: 80,
-            destination_port: 8080,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 0,
-            syn_flag: 1,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 0,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 1,
-            sequence_number_ack: 0,
-        };
+        let mut fin_fwd = build_packet(ip_source, 50000, ip_destination, 80, 1_000_100);
+        fin_fwd.fin_flag = 1;
+        fin_fwd.sequence_number = 100;
+        assert!(!flow.update_flow(&fin_fwd, true));
 
-        let flow_ended = flow.update_flow(&packet, false);
-        assert!(!flow_ended);
-        assert_eq!(flow.bwd_packet_count, 1);
-        assert_eq!(flow.bwd_syn_flag_count, 1);
+        let mut ack_bwd = build_packet(ip_destination, 80, ip_source, 50000, 1_000_200);
+        ack_bwd.ack_flag = 1;
+        ack_bwd.sequence_number_ack = 101;
+        assert!(!flow.update_flow(&ack_bwd, false));
+
+        let mut fin_bwd = build_packet(ip_destination, 80, ip_source, 50000, 1_000_300);
+        fin_bwd.fin_flag = 1;
+        fin_bwd.sequence_number = 200;
+        assert!(!flow.update_flow(&fin_bwd, false));
+
+        let mut ack_fwd = build_packet(ip_source, 50000, ip_destination, 80, 1_000_400);
+        ack_fwd.ack_flag = 1;
+        ack_fwd.sequence_number_ack = 201;
+        assert!(flow.update_flow(&ack_fwd, true));
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::TcpTermination);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::FourWayFin);
     }
 
     #[test]
-    fn test_tcp_flow_termination() {
-        let ip_src = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        let ip_dst = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
+    fn tcp_handshake_completion_is_tracked() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
         let mut flow = BasicFlow::new(
-            "flow1".to_string(),
-            ip_src,
-            8080,
-            ip_dst,
-            80,
-            6, // TCP protocol
-            Utc::now(),
+            "flow-3".to_string(),
+            ip_source,
+            50001,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
         );
 
-        // Forward FIN
-        let packet_fin_fwd = PacketFeatures {
-            source_ip: ip_src,
-            destination_ip: ip_dst,
-            source_port: 8080,
-            destination_port: 80,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 1,
-            syn_flag: 0,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 0,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 100,
-            sequence_number_ack: 0,
-        };
-        flow.update_flow(&packet_fin_fwd, true);
+        let mut syn = build_packet(ip_source, 50001, ip_destination, 443, 1_000_100);
+        syn.syn_flag = 1;
+        assert!(!flow.update_flow(&syn, true));
+        assert!(!flow.tcp_handshake_completed);
 
-        // Backward ACK for FIN
-        let packet_ack_bwd = PacketFeatures {
-            source_ip: ip_dst,
-            destination_ip: ip_src,
-            source_port: 80,
-            destination_port: 8080,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 0,
-            syn_flag: 0,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 1,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 200,
-            sequence_number_ack: 101,
-        };
-        flow.update_flow(&packet_ack_bwd, false);
+        let mut syn_ack = build_packet(ip_destination, 443, ip_source, 50001, 1_000_200);
+        syn_ack.syn_flag = 1;
+        syn_ack.ack_flag = 1;
+        syn_ack.sequence_number = 700;
+        assert!(!flow.update_flow(&syn_ack, false));
+        assert!(!flow.tcp_handshake_completed);
 
-        // Backward FIN
-        let packet_fin_bwd = PacketFeatures {
-            source_ip: ip_dst,
-            destination_ip: ip_src,
-            source_port: 80,
-            destination_port: 8080,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 1,
-            syn_flag: 0,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 0,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 300,
-            sequence_number_ack: 0,
-        };
-        flow.update_flow(&packet_fin_bwd, false);
+        let mut ack = build_packet(ip_source, 50001, ip_destination, 443, 1_000_300);
+        ack.ack_flag = 1;
+        ack.sequence_number_ack = 701;
+        assert!(!flow.update_flow(&ack, true));
 
-        // Forward ACK for FIN
-        let packet_ack_fwd = PacketFeatures {
-            source_ip: ip_src,
-            destination_ip: ip_dst,
-            source_port: 8080,
-            destination_port: 80,
-            protocol: 6,
-            timestamp: Utc::now(),
-            fin_flag: 0,
-            syn_flag: 0,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 1,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 400,
-            sequence_number_ack: 301,
-        };
-        let flow_ended = flow.update_flow(&packet_ack_fwd, true);
-
-        assert!(flow_ended);
-        assert_eq!(flow.state_fwd, FlowState::FinAcked);
-        assert_eq!(flow.state_bwd, FlowState::FinAcked);
+        assert!(flow.tcp_handshake_completed);
+        assert!(!flow.tcp_reset_before_handshake);
+        assert!(!flow.tcp_reset_after_handshake);
     }
 
     #[test]
-    fn test_flow_expiry() {
-        let ip_src = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        let ip_dst = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 2));
-        let first_timestamp = Utc::now();
+    fn tcp_reset_before_handshake_is_classified() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
         let mut flow = BasicFlow::new(
-            "flow1".to_string(),
-            ip_src,
-            8080,
-            ip_dst,
-            80,
-            6, // TCP protocol
-            first_timestamp,
+            "flow-4".to_string(),
+            ip_source,
+            50002,
+            ip_destination,
+            22,
+            6,
+            1_000_000,
         );
 
-        // Active timeout should expire
-        let timestamp = first_timestamp + Duration::seconds(61);
-        assert!(flow.is_expired(timestamp, 60, 30));
+        let mut syn = build_packet(ip_source, 50002, ip_destination, 22, 1_000_100);
+        syn.syn_flag = 1;
+        assert!(!flow.update_flow(&syn, true));
 
-        // Idle timeout should expire
-        let packet = PacketFeatures {
-            source_ip: ip_src,
-            destination_ip: ip_dst,
-            source_port: 8080,
-            destination_port: 80,
-            protocol: 6,
-            timestamp: first_timestamp,
-            fin_flag: 0,
-            syn_flag: 1,
-            rst_flag: 0,
-            psh_flag: 0,
-            ack_flag: 0,
-            urg_flag: 0,
-            cwr_flag: 0,
-            ece_flag: 0,
-            data_length: 0,
-            header_length: 20,
-            length: 40,
-            window_size: 1024,
-            sequence_number: 1,
-            sequence_number_ack: 0,
-        };
-        flow.update_flow(&packet, true);
+        let mut rst = build_packet(ip_destination, 22, ip_source, 50002, 1_000_200);
+        rst.rst_flag = 1;
+        assert!(flow.update_flow(&rst, false));
 
-        let timestamp = first_timestamp + Duration::seconds(31);
-        assert!(flow.is_expired(timestamp, 60, 30));
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::TcpReset);
+        assert!(!flow.tcp_handshake_completed);
+        assert!(flow.tcp_reset_before_handshake);
+        assert!(!flow.tcp_reset_after_handshake);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::Reset);
+    }
+
+    #[test]
+    fn tcp_reset_after_handshake_is_classified() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2));
+        let mut flow = BasicFlow::new(
+            "flow-5".to_string(),
+            ip_source,
+            50003,
+            ip_destination,
+            22,
+            6,
+            1_000_000,
+        );
+
+        let mut syn = build_packet(ip_source, 50003, ip_destination, 22, 1_000_100);
+        syn.syn_flag = 1;
+        assert!(!flow.update_flow(&syn, true));
+
+        let mut syn_ack = build_packet(ip_destination, 22, ip_source, 50003, 1_000_200);
+        syn_ack.syn_flag = 1;
+        syn_ack.ack_flag = 1;
+        syn_ack.sequence_number = 900;
+        assert!(!flow.update_flow(&syn_ack, false));
+
+        let mut ack = build_packet(ip_source, 50003, ip_destination, 22, 1_000_300);
+        ack.ack_flag = 1;
+        ack.sequence_number_ack = 901;
+        assert!(!flow.update_flow(&ack, true));
+
+        let mut rst = build_packet(ip_destination, 22, ip_source, 50003, 1_000_400);
+        rst.rst_flag = 1;
+        assert!(flow.update_flow(&rst, false));
+
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::TcpReset);
+        assert!(flow.tcp_handshake_completed);
+        assert!(!flow.tcp_reset_before_handshake);
+        assert!(flow.tcp_reset_after_handshake);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::Reset);
+    }
+
+    #[test]
+    fn ack_only_packet_does_not_complete_tcp_handshake() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 1, 2));
+        let mut flow = BasicFlow::new(
+            "flow-6".to_string(),
+            ip_source,
+            50010,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
+        );
+
+        let mut ack = build_packet(ip_source, 50010, ip_destination, 443, 1_000_100);
+        ack.ack_flag = 1;
+        ack.sequence_number_ack = 42;
+        assert!(!flow.update_flow(&ack, true));
+
+        assert!(!flow.tcp_handshake_completed);
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::None);
+    }
+
+    #[test]
+    fn syn_ack_without_initial_syn_does_not_complete_handshake() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 2, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 2, 2));
+        let mut flow = BasicFlow::new(
+            "flow-7".to_string(),
+            ip_source,
+            50011,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
+        );
+
+        let mut syn_ack = build_packet(ip_destination, 443, ip_source, 50011, 1_000_100);
+        syn_ack.syn_flag = 1;
+        syn_ack.ack_flag = 1;
+        syn_ack.sequence_number = 1000;
+        assert!(!flow.update_flow(&syn_ack, false));
+
+        let mut ack = build_packet(ip_source, 50011, ip_destination, 443, 1_000_200);
+        ack.ack_flag = 1;
+        ack.sequence_number_ack = 1001;
+        assert!(!flow.update_flow(&ack, true));
+
+        assert!(!flow.tcp_handshake_completed);
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::None);
+    }
+
+    #[test]
+    fn fin_with_payload_uses_payload_sequence_space_for_termination() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 3, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 3, 2));
+        let mut flow = BasicFlow::new(
+            "flow-8".to_string(),
+            ip_source,
+            50012,
+            ip_destination,
+            80,
+            6,
+            1_000_000,
+        );
+
+        let mut fin_fwd = build_packet(ip_source, 50012, ip_destination, 80, 1_000_100);
+        fin_fwd.fin_flag = 1;
+        fin_fwd.sequence_number = 100;
+        fin_fwd.data_length = 20;
+        assert!(!flow.update_flow(&fin_fwd, true));
+
+        let mut ack_bwd = build_packet(ip_destination, 80, ip_source, 50012, 1_000_200);
+        ack_bwd.ack_flag = 1;
+        ack_bwd.sequence_number_ack = 121;
+        assert!(!flow.update_flow(&ack_bwd, false));
+
+        let mut fin_bwd = build_packet(ip_destination, 80, ip_source, 50012, 1_000_300);
+        fin_bwd.fin_flag = 1;
+        fin_bwd.sequence_number = 200;
+        assert!(!flow.update_flow(&fin_bwd, false));
+
+        let mut ack_fwd = build_packet(ip_source, 50012, ip_destination, 80, 1_000_400);
+        ack_fwd.ack_flag = 1;
+        ack_fwd.sequence_number_ack = 201;
+        assert!(flow.update_flow(&ack_fwd, true));
+
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::TcpTermination);
+    }
+
+    #[test]
+    fn non_tcp_flows_ignore_rst_classification() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 4, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 4, 2));
+        let mut flow = BasicFlow::new(
+            "flow-9".to_string(),
+            ip_source,
+            53000,
+            ip_destination,
+            53,
+            17,
+            1_000_000,
+        );
+
+        let mut packet = build_packet(ip_source, 53000, ip_destination, 53, 1_000_100);
+        packet.protocol = 17;
+        packet.rst_flag = 1;
+        assert!(!flow.update_flow(&packet, true));
+
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::None);
+        assert!(!flow.tcp_handshake_completed);
+        assert!(!flow.tcp_reset_before_handshake);
+        assert!(!flow.tcp_reset_after_handshake);
+        flow.close_flow(2_000_000, FlowExpireCause::IdleTimeout);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::NotApplicable);
+    }
+
+    #[test]
+    fn simultaneous_tcp_close_terminates_after_final_ack() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 5, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 5, 2));
+        let mut flow = BasicFlow::new(
+            "flow-10".to_string(),
+            ip_source,
+            50013,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
+        );
+
+        let mut syn = build_packet(ip_source, 50013, ip_destination, 443, 1_000_100);
+        syn.syn_flag = 1;
+        assert!(!flow.update_flow(&syn, true));
+
+        let mut syn_ack = build_packet(ip_destination, 443, ip_source, 50013, 1_000_200);
+        syn_ack.syn_flag = 1;
+        syn_ack.ack_flag = 1;
+        syn_ack.sequence_number = 700;
+        assert!(!flow.update_flow(&syn_ack, false));
+
+        let mut ack = build_packet(ip_source, 50013, ip_destination, 443, 1_000_300);
+        ack.ack_flag = 1;
+        ack.sequence_number_ack = 701;
+        assert!(!flow.update_flow(&ack, true));
+        assert!(flow.tcp_handshake_completed);
+
+        let mut fin_fwd = build_packet(ip_source, 50013, ip_destination, 443, 1_000_400);
+        fin_fwd.fin_flag = 1;
+        fin_fwd.sequence_number = 100;
+        assert!(!flow.update_flow(&fin_fwd, true));
+
+        let mut fin_ack_bwd = build_packet(ip_destination, 443, ip_source, 50013, 1_000_500);
+        fin_ack_bwd.fin_flag = 1;
+        fin_ack_bwd.ack_flag = 1;
+        fin_ack_bwd.sequence_number = 200;
+        fin_ack_bwd.sequence_number_ack = 101;
+        assert!(!flow.update_flow(&fin_ack_bwd, false));
+
+        let mut final_ack = build_packet(ip_source, 50013, ip_destination, 443, 1_000_600);
+        final_ack.ack_flag = 1;
+        final_ack.sequence_number_ack = 201;
+        assert!(flow.update_flow(&final_ack, true));
+
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::TcpTermination);
+        assert!(flow.tcp_handshake_completed);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::SimultaneousFin);
+    }
+
+    #[test]
+    fn half_close_style_is_preserved_when_timeout_happens_after_single_fin() {
+        let ip_source = IpAddr::V4(Ipv4Addr::new(10, 0, 6, 1));
+        let ip_destination = IpAddr::V4(Ipv4Addr::new(10, 0, 6, 2));
+        let mut flow = BasicFlow::new(
+            "flow-11".to_string(),
+            ip_source,
+            50014,
+            ip_destination,
+            443,
+            6,
+            1_000_000,
+        );
+
+        let mut fin_fwd = build_packet(ip_source, 50014, ip_destination, 443, 1_000_100);
+        fin_fwd.fin_flag = 1;
+        fin_fwd.sequence_number = 100;
+        assert!(!flow.update_flow(&fin_fwd, true));
+
+        flow.close_flow(2_000_000, FlowExpireCause::IdleTimeout);
+
+        assert_eq!(flow.flow_expire_cause, FlowExpireCause::IdleTimeout);
+        assert_eq!(flow.tcp_close_style, TcpCloseStyle::HalfClose);
     }
 }

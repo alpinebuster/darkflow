@@ -111,9 +111,9 @@ impl Flow for CiddsFlow {
     fn dump_without_contamination(&self) -> String {
         format!(
             "{},{},{},{},{},{},{}",
-            self.format_protocol(self.basic_flow.protocol),
             iana_port_mapping(self.basic_flow.port_source),
             iana_port_mapping(self.basic_flow.port_destination),
+            self.format_protocol(self.basic_flow.protocol),
             self.basic_flow.get_flow_duration_msec(),
             self.packet_stats.flow_total(),
             self.packet_stats.flow_count(),
@@ -146,9 +146,5 @@ impl Flow for CiddsFlow {
     ) -> (bool, FlowExpireCause) {
         self.basic_flow
             .is_expired(timestamp_us, active_timeout, idle_timeout)
-    }
-
-    fn flow_key(&self) -> &String {
-        &self.basic_flow.flow_key
     }
 }

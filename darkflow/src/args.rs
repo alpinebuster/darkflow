@@ -1,5 +1,6 @@
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use strum_macros::{EnumString, VariantNames};
 
 #[derive(Debug, Parser)]
@@ -41,7 +42,7 @@ pub struct Cli {
     pub expiration_check_interval: u64,
 
     /// The numbers of threads to use for processing packets (optional)
-    /// (default: 5, maximum: number of logical CPUs)
+    /// (default: realtime uses 12, capped at the number of logical CPUs; pcap uses 5; maximum: number of logical CPUs)
     #[clap(long, group = "cli_group")]
     pub threads: Option<u8>,
 
@@ -53,9 +54,9 @@ pub struct Cli {
     #[clap(long, group = "cli_group", required_if_eq("output", "Csv"))]
     pub export_path: Option<String>,
 
-    /// Disable the graph in TUI when exporting in CSV mode
-    #[clap(long, group = "cli_group", action = clap::ArgAction::SetTrue, required_if_eq("output", "Csv"))]
-    pub performance_mode: bool,
+    /// Enable the realtime packet graph when exporting to CSV
+    #[clap(long = "packet-graph", alias = "performance-mode", group = "cli_group", action = clap::ArgAction::SetTrue, required_if_eq("output", "Csv"))]
+    pub packet_graph: bool,
 
     /// Whether to export the feature header
     #[clap(long, action = clap::ArgAction::SetTrue, group = "cli_group")]
@@ -88,17 +89,18 @@ pub enum Commands {
     },
 }
 
-impl ToString for Commands {
-    fn to_string(&self) -> String {
+impl fmt::Display for Commands {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Commands::Realtime {
                 interface,
                 ingress_only,
-            } => format!(
+            } => write!(
+                f,
                 "Realtime/Interface: {}/Ingress only: {}",
                 interface, ingress_only
             ),
-            Commands::Pcap { path } => format!("Pcap/Path: {}", path),
+            Commands::Pcap { path } => write!(f, "Pcap/Path: {}", path),
         }
     }
 }
@@ -127,7 +129,7 @@ pub struct ExportConfig {
     pub expiration_check_interval: u64,
 
     /// The numbers of threads to use for processing packets (optional)
-    /// (default: 5, maximum: number of logical CPUs)
+    /// (default: realtime uses 12, capped at the number of logical CPUs; pcap uses 5; maximum: number of logical CPUs)
     #[clap(short, long)]
     pub threads: Option<u8>,
 }
@@ -142,9 +144,10 @@ pub struct OutputConfig {
     #[clap(required_if_eq("output", "csv"))]
     pub export_path: Option<String>,
 
-    /// Disable the graph in TUI when exporting in CSV mode
-    #[clap(long, action = clap::ArgAction::SetTrue, required_if_eq("output", "Csv"))]
-    pub performance_mode: bool,
+    /// Enable the realtime packet graph when exporting to CSV
+    #[clap(long = "packet-graph", alias = "performance-mode", action = clap::ArgAction::SetTrue, required_if_eq("output", "Csv"))]
+    #[serde(default, alias = "performance_mode")]
+    pub packet_graph: bool,
 
     /// Whether to export the feature header
     #[clap(long, action = clap::ArgAction::SetTrue)]
@@ -164,6 +167,7 @@ pub enum ExportMethodType {
     Csv,
 }
 
+#[allow(clippy::upper_case_acronyms)]
 #[derive(Serialize, Deserialize, clap::ValueEnum, Clone, Debug, EnumString, VariantNames)]
 #[strum(serialize_all = "kebab_case")]
 pub enum FlowType {
@@ -176,10 +180,10 @@ pub enum FlowType {
     /// Represents the CIDDS Flow, giving 10 features.
     CIDDS,
 
-    /// Represents a nfstream inspired flow, giving 69 features.
+    /// Represents a nfstream inspired flow, giving 71 features.
     Nfstream,
 
-    /// Represents the Rusti Flow, giving 120 features.
+    /// Represents the Rusti Flow, giving 203 features.
     Rustiflow,
 
     /// Represents the multi-flow behavior of Tor.
@@ -212,7 +216,7 @@ impl Default for ConfigFile {
                 export_path: None,
                 header: true,
                 drop_contaminant_features: false,
-                performance_mode: true,
+                packet_graph: false,
             },
         }
     }

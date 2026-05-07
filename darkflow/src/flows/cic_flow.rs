@@ -117,7 +117,7 @@ impl Flow for CicFlow {
             {},{},{},{},{},{},{},{},{},{},\
             {},{},{},{},{},{},{},{},{},{},\
             {},{},{},{},{},{},{},{},{},{},\
-            {},{},{}",
+            {},{},{},{},{},{},{},{},{},{}",
             // Basic Info
             self.basic_flow.flow_key,
             self.basic_flow.ip_source,
@@ -127,6 +127,9 @@ impl Flow for CicFlow {
             self.basic_flow.protocol,
             self.basic_flow.get_first_timestamp(),
             self.basic_flow.get_flow_duration_usec(),
+            u8::from(self.basic_flow.tcp_handshake_completed),
+            u8::from(self.basic_flow.tcp_reset_before_handshake),
+            u8::from(self.basic_flow.tcp_reset_after_handshake),
             // Packet Length Stats (fwd & bwd)
             self.payload_len_stats.fwd_payload_len.get_count(),
             self.payload_len_stats.bwd_payload_len.get_count(),
@@ -252,6 +255,10 @@ impl Flow for CicFlow {
             // ICMP Stats
             self.icmp_stats.get_code(),
             self.icmp_stats.get_type(),
+            self.icmp_stats.echo_request_count,
+            self.icmp_stats.echo_reply_count,
+            self.icmp_stats.error_count,
+            self.icmp_stats.destination_unreachable_count,
             // Retransmission Stats
             self.retransmission_stats.fwd_retransmission_count,
             self.retransmission_stats.bwd_retransmission_count,
@@ -273,6 +280,9 @@ impl Flow for CicFlow {
             "Protocol",
             "Timestamp",
             "Flow Duration",
+            "TCP Handshake Completed",
+            "TCP Reset Before Handshake",
+            "TCP Reset After Handshake",
             "Total Fwd Packet",
             "Total Bwd packets",
             "Total Length of Fwd Packet",
@@ -354,6 +364,10 @@ impl Flow for CicFlow {
             "Idle Min",
             "ICMP Code",
             "ICMP Type",
+            "ICMP Echo Request Count",
+            "ICMP Echo Reply Count",
+            "ICMP Error Count",
+            "ICMP Destination Unreachable Count",
             "Fwd TCP Retrans. Count",
             "Bwd TCP Retrans. Count",
             "Total TCP Retrans. Count",
@@ -372,12 +386,15 @@ impl Flow for CicFlow {
             {},{},{},{},{},{},{},{},{},{},\
             {},{},{},{},{},{},{},{},{},{},\
             {},{},{},{},{},{},{},{},{},{},\
-            {},{},{},{},{},{},{},{},{}",
+            {},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             // Basic Info
             iana_port_mapping(self.basic_flow.port_source),
             iana_port_mapping(self.basic_flow.port_destination),
             self.basic_flow.protocol,
             self.basic_flow.get_flow_duration_usec(),
+            u8::from(self.basic_flow.tcp_handshake_completed),
+            u8::from(self.basic_flow.tcp_reset_before_handshake),
+            u8::from(self.basic_flow.tcp_reset_after_handshake),
             // Packet Length Stats (fwd & bwd)
             self.payload_len_stats.fwd_payload_len.get_count(),
             self.payload_len_stats.bwd_payload_len.get_count(),
@@ -503,6 +520,10 @@ impl Flow for CicFlow {
             // ICMP Stats
             self.icmp_stats.get_code(),
             self.icmp_stats.get_type(),
+            self.icmp_stats.echo_request_count,
+            self.icmp_stats.echo_reply_count,
+            self.icmp_stats.error_count,
+            self.icmp_stats.destination_unreachable_count,
             // Retransmission Stats
             self.retransmission_stats.fwd_retransmission_count,
             self.retransmission_stats.bwd_retransmission_count,
@@ -520,6 +541,9 @@ impl Flow for CicFlow {
             "Dst Port (IANA)",
             "Protocol",
             "Flow Duration",
+            "TCP Handshake Completed",
+            "TCP Reset Before Handshake",
+            "TCP Reset After Handshake",
             "Total Fwd Packet",
             "Total Bwd packets",
             "Total Length of Fwd Packet",
@@ -601,6 +625,10 @@ impl Flow for CicFlow {
             "Idle Min",
             "ICMP Code",
             "ICMP Type",
+            "ICMP Echo Request Count",
+            "ICMP Echo Reply Count",
+            "ICMP Error Count",
+            "ICMP Destination Unreachable Count",
             "Fwd TCP Retrans. Count",
             "Bwd TCP Retrans. Count",
             "Total TCP Retrans. Count",
@@ -621,9 +649,5 @@ impl Flow for CicFlow {
     ) -> (bool, FlowExpireCause) {
         self.basic_flow
             .is_expired(timestamp_us, active_timeout, idle_timeout)
-    }
-
-    fn flow_key(&self) -> &String {
-        &self.basic_flow.flow_key
     }
 }

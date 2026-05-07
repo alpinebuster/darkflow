@@ -1,4 +1,4 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -7,11 +7,12 @@ RUN \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
+    ca-certificates \
     curl \
     build-essential \
+    pkg-config \
     libpcap-dev \
     iproute2 \
-    linux-tools-5.8.0-63-generic \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
@@ -22,7 +23,6 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
  && cargo install bpf-linker
 
 ENV PATH="/root/.cargo/bin:${PATH}"
-ENV PATH="/usr/lib/linux-tools/5.8.0-63-generic:$PATH"
 ENV RUST_LOG=info
 
 # Copy

@@ -1,12 +1,14 @@
 # Stage 1: Build
-FROM rust:latest AS builder
+FROM rust:1-bookworm AS builder
 
 # Install build dependencies
 RUN \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
+    ca-certificates \
     libpcap-dev \
+    pkg-config \
     iproute2 \
     && rustup toolchain install stable \
     && rustup toolchain install nightly --component rust-src \
@@ -40,13 +42,20 @@ RUN \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && apt-get install -y \
+    ca-certificates \
     libpcap0.8 \
     iproute2 \
     --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
+# Recreate the builder-time layout expected by the binary's relative eBPF path lookup.
+WORKDIR /usr/src/app
+
 # Copy the compiled binaries from the builder stage
 COPY --from=builder /usr/src/app/target/release/darkflow /usr/local/bin/darkflow
+COPY --from=builder /usr/src/app/target/bpfel-unknown-none/release/darkflow-ebpf-ipv4 /usr/src/app/target/bpfel-unknown-none/release/darkflow-ebpf-ipv4
+COPY --from=builder /usr/src/app/target/bpfel-unknown-none/release/darkflow-ebpf-ipv6 /usr/src/app/target/bpfel-unknown-none/release/darkflow-ebpf-ipv6
+RUN mkdir -p /usr/src/app/darkflow
 
 # Set environment variables
 ENV RUST_LOG=info

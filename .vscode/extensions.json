@@ -1,0 +1,17 @@
+{
+    "recommendations": [
+        "ms-python.vscode-pylance",
+        "ms-python.python",
+        "ms-python.debugpy",
+        "rust-lang.rust-analyzer",
+        "bierner.emojisense",
+        "ibm.output-colorizer",
+        "wayou.vscode-todo-highlight",
+        "mhutchie.git-graph",
+        "streetsidesoftware.code-spell-checker",
+        "ms-vscode-remote.remote-ssh",
+        "ms-python.black-formatter",
+        "mechatroner.rainbow-csv",
+        "percy.vscode-pydata-viewer"
+    ]
+}

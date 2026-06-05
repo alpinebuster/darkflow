@@ -1,0 +1,20 @@
+[project]
+name = "darkflow"
+version = "1.0.1"
+description = "High performance (real time / offline) darknet flow feature extraction tool built in Rust using eBPF."
+authors = [
+    {name = "zzz",email = "imzqqq@hotmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas (>=3.0.3,<4.0.0)"
+]
+
+[tool.poetry]
+package-mode = false
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

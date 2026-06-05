@@ -86,17 +86,22 @@ def main():
         choices=["cic", "cidds", "darkflow", "lexnetflow", "nfstream", "rustiflow"],
         help="Feature type (cic, cidds, darkflow, lexnetflow, nfstream, rustiflow (NTLFlow))"
     )
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="Merge all generated csv files into one (default: False)",
+    )
     args = parser.parse_args()
 
     base_dir = Path(args.base_dir).resolve()
     feature_type = args.feature_type
+    merge = args.merge
 
     pcap_files = [
         p for p in base_dir.rglob("*")
         if p.suffix.lower() in [".pcap", ".pcapng"]
     ]
-
-    print(f"Found {len(pcap_files)} pcap files")
+    print(f"[+] Found {len(pcap_files)} pcap files")
 
     cpus = os.cpu_count()
     assert cpus is not None
@@ -111,8 +116,11 @@ def main():
         for f in as_completed(futures):
             print(f.result())
 
-    merge_csvs(base_dir, feature_type)
-    print("ALl JOBS ARE FINISHED SUCCESSFULLY!")
+    if merge:
+        print("[+] Merging csv files...")
+        merge_csvs(base_dir, feature_type)
+
+    print("[!] ALl JOBS ARE FINISHED SUCCESSFULLY!")
 
 
 if __name__ == "__main__":
@@ -120,6 +128,7 @@ if __name__ == "__main__":
     nohup python gen_darkflow.py \
         --base-dir ./dataset_name \
         --feature-type darkflow \
+        --merge \
         > gen_darkflow-dataset_name-darkflow.log 2>&1 &
     """
     main()

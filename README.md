@@ -1,6 +1,6 @@
-# Darkflow (DF)
+# Flash Darkflow
 
-A DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow).
+A flash DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow).
 
 > For the Chinese version, please visit [中文版本（ZH）](./README-zh.md)
 

@@ -27,3 +27,4 @@ __pycache__
 !darkflow/tests/data/*.pcap
 *.csv
 llvm.sh
+*.svg

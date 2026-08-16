@@ -267,6 +267,16 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
 
 ```bash
 cargo xtask run -- [OPTIONS] <COMMAND>
+
+RUST_LOG=info \
+FLASHFLOW_PROFILE_RESOURCE_SUMMARY=1 \
+FLASHFLOW_PROFILE_FLAMEGRAPH=./darkflow-profile.svg \
+cargo run --release --bin darkflow -- \
+  --header \
+  -f darkflow \
+  -o csv \
+  --export-path output.csv \
+  pcap test.pcapng
 ```
 
 ## Running tests
@@ -355,7 +365,6 @@ Options:
 
       -V, --version
               Print version
-
 ```
 
 ## Logging in both development or using the binary

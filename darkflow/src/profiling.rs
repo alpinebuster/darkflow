@@ -14,14 +14,14 @@ pub struct ProfilingSession {
 
 impl ProfilingSession {
     pub fn start_from_env(mode: &'static str) -> Result<Option<Self>> {
-        let flamegraph_path = env::var_os("RUSTIFLOW_PROFILE_FLAMEGRAPH").map(PathBuf::from);
-        let sampling_frequency_hz = env::var("RUSTIFLOW_PROFILE_FREQUENCY_HZ")
+        let flamegraph_path = env::var_os("FLASHFLOW_PROFILE_FLAMEGRAPH").map(PathBuf::from);
+        let sampling_frequency_hz = env::var("FLASHFLOW_PROFILE_FREQUENCY_HZ")
             .ok()
             .and_then(|value| value.parse::<i32>().ok())
             .filter(|value| *value > 0)
             .unwrap_or(DEFAULT_PROFILE_FREQUENCY_HZ);
 
-        let enabled = flamegraph_path.is_some() || env_flag("RUSTIFLOW_PROFILE_RESOURCE_SUMMARY");
+        let enabled = flamegraph_path.is_some() || env_flag("FLASHFLOW_PROFILE_RESOURCE_SUMMARY");
         if !enabled {
             return Ok(None);
         }
@@ -45,7 +45,7 @@ impl ProfilingSession {
                 .as_ref()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| "disabled".to_string()),
-            env_flag("RUSTIFLOW_PROFILE_RESOURCE_SUMMARY"),
+            env_flag("FLASHFLOW_PROFILE_RESOURCE_SUMMARY"),
             sampling_frequency_hz
         );
 

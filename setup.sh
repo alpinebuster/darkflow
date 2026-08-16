@@ -33,7 +33,7 @@ OS="$(uname -s)"
 
 if [[ "$OS" == "Linux" && "$ARCH" == "x86_64" ]]; then
   cargo install cargo-binstall --locked
-  cargo binstall bpf-linker || echo "bpf-linker already installed"
+  cargo binstall -y bpf-linker || echo "bpf-linker already installed"
 else
   echo "Non-x86_64 or non-Linux detected."
   echo "Installing llvm and bpf-linker without default features."

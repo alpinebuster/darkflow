@@ -199,19 +199,39 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
 
 ### bpf Linker Installation:
 
+- **Ubuntu 20.04 LTS Specific**:
+  ```bash
+  sudo apt update
+  sudo apt install -y wget gnupg software-properties-common
+  wget https://apt.llvm.org/llvm.sh
+  chmod +x llvm.sh
+  sudo ./llvm.sh 21
+  sudo apt install llvm-21 llvm-21-dev clang-21 lld-21
+  export LLVM_HOME=/usr/lib/llvm-21
+  export PATH=$LLVM_HOME/bin:$PATH
+  export LD_LIBRARY_PATH=$LLVM_HOME/lib:$LD_LIBRARY_PATH
+  # /usr/lib/llvm-21/bin/llvm-config --version
+  llvm-config --version
+
+  sudo apt install linux-tools-5.8.0-63-generic
+  export PATH=/usr/lib/linux-tools/5.8.0-63-generic:$PATH
+
+  # cargo uninstall bpf-linker
+  cargo install bpf-linker \
+    --no-default-features \
+    --features llvm-21
+  ```
 - **For Linux x86_64**:
   ```bash
   cargo install bpf-linker
+  # or
+  cargo install cargo-binstall --locked
+  cargo binstall bpf-linker
   ```
 - **For MacOS/Linux (Other Architectures)**:
   ```bash
   brew install llvm
   cargo install --no-default-features bpf-linker
-  ```
-- **Ubuntu 20.04 LTS Specific**:
-  ```bash
-  sudo apt install linux-tools-5.8.0-63-generic
-  export PATH=/usr/lib/linux-tools/5.8.0-63-generic:$PATH
   ```
 
 ## Building the Project

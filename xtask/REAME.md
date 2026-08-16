@@ -1,4 +1,5 @@
 # xtask
+
 Key features:
 
 * Flow-based analysis, not per-packet
@@ -10,7 +11,7 @@ Key features:
 
 In this project, the `xtask` crate is used to manage custom build tasks, such as compiling eBPF programs. The workflow for running a command like `cargo xtask ebpf-ipv4` is as follows:
 
-```
+```txt
 cargo xtask ebpf-ipv4
    ↓
 cargo run -p xtask -- ebpf-ipv4
@@ -28,7 +29,7 @@ Generate the eBPF `.o` file
 
 The traffic processing in the **Darkflow** project follows this architecture:
 
-```
+```txt
 Network Packet
       ↓
 Network Interface / Kernel Network Stack

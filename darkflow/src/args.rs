@@ -189,6 +189,7 @@ pub enum FlowType {
     /// Represents the multi-flow behavior of Tor.
     Darkflow,
     Lexnetflow,
+    Flashflow,
 
     /// Represents a flow that you can implement yourself.
     Custom,

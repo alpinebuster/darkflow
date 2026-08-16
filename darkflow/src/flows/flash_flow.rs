@@ -9,53 +9,15 @@ use super::{
     util::FlowExpireCause,
 };
 
-/*
-Multivariate Time Series (MTS) classification traffic features.
-
-References:
-    [1] Fauvel, Kevin, Fuxing Chen, and Dario Rossi.
-    "A lightweight, efficient and explainable-by-design convolutional neural network for
-    internet traffic classification." Proceedings of the 29th ACM SIGKDD Conference on
-    Knowledge Discovery and Data Mining. 2023.
-
-Examples:
-    Imagine you have a dataset with n_samples = 3 and n_packets = 4.
-    A sample in X_train might look like this before processing:
-
-    X_train = [[10, -20, 30, -40],
-                [-5, 15, -25, 35],
-                [100, -200, 300, -400]]
-
-    Step 1: Absolute Values (X1):
-    X1 = [[10, 20, 30, 40],
-            [5, 15, 25, 35],
-            [100, 200, 300, 400]]
-
-    Step 2: Signs (X2):
-    X2 = [[1, -1, 1, -1],
-            [-1, 1, -1, 1],
-            [1, -1, 1, -1]]
-
-    Step 3: Concatenation (X3):
-    X3 = [[10, 20, 30, 40, 1, -1, 1, -1],
-            [5, 15, 25, 35, -1, 1, -1, 1],
-            [100, 200, 300, 400, 1, -1, 1, -1]]
-
-    Step 4: Reshaping:
-    X_train_reshaped = [[[[10, 1], [20, -1], [30, 1], [40, -1]]],
-                        [[[5, -1], [15, 1], [25, -1], [35, 1]]],
-                        [[[100, 1], [200, -1], [300, 1], [400, -1]]]]
-*/
-
 #[derive(Clone)]
-pub struct Lexnetflow {
+pub struct Flashflow {
     /// Choose here for an existing flow type or leave the basic flow.
     pub basic_flow: BasicFlow,
     /// The additional features.
     pub packet_seq: PacketSequence,
 }
 
-impl Flow for Lexnetflow {
+impl Flow for Flashflow {
     fn new(
         flow_key: String,
         ipv4_source: IpAddr,
@@ -65,7 +27,7 @@ impl Flow for Lexnetflow {
         protocol: u8,
         timestamp_us: i64,
     ) -> Self {
-        Lexnetflow {
+        Flashflow {
             basic_flow: BasicFlow::new(
                 flow_key,
                 ipv4_source,

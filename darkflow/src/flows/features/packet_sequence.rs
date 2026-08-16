@@ -70,6 +70,7 @@ impl PacketSequence {
 }
 
 impl FlowFeature for PacketSequence {
+    // TODO: use virtual sketch
     fn update(&mut self, packet: &PacketFeatures, fwd: bool, _last_ts: i64) {
         let ts = packet.timestamp_us;
 
@@ -149,7 +150,6 @@ impl FlowFeature for PacketSequence {
     }
 }
 
-/// Used by Lexnetflow
 impl PacketSequence {
     pub fn dump_dir_len(&self) -> String {
         format!(

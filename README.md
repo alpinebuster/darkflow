@@ -1,16 +1,8 @@
 # Flash Darkflow
 
-A flash DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow).
+A flash DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool based on [RustiFlow](https://github.com/idlab-discover/RustiFlow). This tool is engineered for robust and efficient feature extraction, particularly for applications such as network intrusion detection systems, among others. Leveraging Rust language and eBPF, it excels in processing high volumes of network traffic with remarkable speed and throughput. (When your traffic is already captured, don't worry! It also has a build in pcap reader which is also amazingly fast.) With various pre-defined feature sets and the ability to create custom feature sets, DF offers a versatile solution for network security applications.
 
 > For the Chinese version, please visit [中文版本（ZH）](./README-zh.md)
-
-## Overview
-
-This tool is engineered for robust and efficient feature extraction, particularly for applications such as network intrusion detection systems, among others. Leveraging Rust language and eBPF, it excels in processing high volumes of network traffic with remarkable speed and throughput. (When your traffic is already captured, don't worry! It also has a build in pcap reader which is also amazingly fast.) With various pre-defined feature sets and the ability to create custom feature sets, DF offers a versatile solution for network security applications.
-
-![Ubuntu 24](https://img.shields.io/badge/Tested%20on%20ubuntu-purple?logo=ubuntu)
-
-![Animated image showing network flows](figures/flows.gif)
 
 ## Key Features
 
@@ -23,7 +15,7 @@ This tool is engineered for robust and efficient feature extraction, particularl
 
 ## Feature sets
 
-See the [wiki](./wiki) for the different feature sets available.
+See the [wiki](./docs/wiki) for the different feature sets available.
 
 ## Supported Packet/Header Coverage
 
@@ -70,13 +62,13 @@ project/
 
 ### Realtime processing
 
-![DF Architecture Realtime](figures/realtime.png)
+![DF Architecture Realtime](docs/figures/realtime.png)
 
 ### Offline PCAP processing
 
-![DF Architecture Offline](figures/offline.png)
+![DF Architecture Offline](docs/figures/offline.png)
 
-## Using the release binary:
+## Using the release binary
 
 Copy the darkflow binary that you can find in this repo in releases to a location of your choice or to the `/usr/local/bin` folder.
 If it does not have the right permissions, you can run the following command:
@@ -85,11 +77,11 @@ If it does not have the right permissions, you can run the following command:
 chmod +x /path/to/darkflow
 ```
 
-### Using commands:
+### Using commands
 
 You can then run the binary with the following commands displayed on the [help menu](#usage-instructions).
 
-### Using the tui interface:
+### Using the tui interface
 
 If you want a more graphical interface, you can use the tui interface by just running `darkflow` without any arguments. This will open a field where you can enter a configuration file you want to edit or you can choose to start new. After that, the following interface will show up:
 
@@ -106,7 +98,7 @@ darkflow -c <filename> pcap <path to pcap file>
 
 > After saving the configuration file, you can safely reset without changing the configuration file.
 
-### Using the configuration file:
+### Using the configuration file
 
 This is an example of a configuration file that you can use to run the tool with the `--config-file` option.
 
@@ -141,26 +133,32 @@ or with:
 darkflow ... -o csv --export-path out.csv --packet-graph realtime <interface>
 ```
 
-## Using the Container:
+## Using the Container
 
 Make sure that you don't use docker desktop and that you don't have it installed on your machine. If you have this setup, it will not work as intended as the `--network host` will not link the container to the host network, but to the network of a VM that docker desktop uses.
 
 - **Build the Container**:
+
   ```bash
   docker build -t darkflow .
   ```
+
 - **Run the Container**:
+
   ```bash
   docker run --rm --network host -v /path/on/host:/app darkflow [ARGS]
   ```
+
   Run it with the `--privileged` flag if you want to capture traffic in real-time.
 - **Example**:
+
   ```bash
   docker run --rm --network host -v ./pcap:/app darkflow \
     -f basic \
     -o print \
     pcap /app/pcap.pcap
   ```
+
   ```bash
   docker run --rm --privileged --network host -v ./output:/app darkflow \
     -f cic \
@@ -181,25 +179,31 @@ Notes:
 
 Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkflow` binary is recommended!
 
-### Prerequisites:
+### Prerequisites
 
 - **libpcap-dev**:
+
   ```sh
   sudo apt install libpcap-dev
   ```
+
 - **Rust Installation**:
+
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
+
 - **Nightly Rust Toolchain**:
+
   ```bash
   rustup install stable
   rustup toolchain install nightly --component rust-src
   ```
 
-### bpf Linker Installation:
+### bpf Linker Installation
 
 - **Ubuntu 20.04 LTS Specific**:
+
   ```bash
   sudo apt update
   sudo apt install -y wget gnupg software-properties-common
@@ -221,14 +225,18 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
     --no-default-features \
     --features llvm-21
   ```
+
 - **For Linux x86_64**:
+
   ```bash
   cargo install bpf-linker
   # or
   cargo install cargo-binstall --locked
   cargo binstall bpf-linker
   ```
+
 - **For MacOS/Linux (Other Architectures)**:
+
   ```bash
   brew install llvm
   cargo install --no-default-features bpf-linker
@@ -237,6 +245,7 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
 ## Building the Project
 
 - **eBPF Programs**:
+
   ```bash
   cargo xtask ebpf-ipv4
   cargo xtask ebpf-ipv6
@@ -245,7 +254,9 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
   cargo xtask ebpf-ipv4 --release
   cargo xtask ebpf-ipv6 --release
   ```
+
 - **User Space Programs**:
+
   ```bash
   cargo build
   # or
@@ -268,7 +279,7 @@ cargo test --no-run
 
 ## Usage Instructions
 
-### Command Help:
+### Command Help
 
 ```bash
 darkflow help

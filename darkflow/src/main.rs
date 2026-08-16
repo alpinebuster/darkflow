@@ -30,8 +30,9 @@ use crate::realtime::handle_realtime;
 use args::{Cli, Commands, ConfigFile, ExportConfig, FlowType, OutputConfig};
 use clap::Parser;
 use flows::{
-    basic_flow::BasicFlow, cidds_flow::CiddsFlow, custom_flow::CustomFlow, flow::Flow,
-    nf_flow::NfFlow, dark_flow::Darkflow, lexnet_flow::Lexnetflow,
+    basic_flow::BasicFlow, custom_flow::CustomFlow, flow::Flow,
+    nf_flow::NfFlow, cidds_flow::CiddsFlow,
+    dark_flow::Darkflow, lexnet_flow::Lexnetflow, flash_flow::Flashflow,
 };
 use log::{debug, error, info};
 use output::OutputWriter;
@@ -207,6 +208,7 @@ async fn run_with_config(config: Config) {
                 FlowType::Rustiflow => execute_realtime!(RustiFlow),
                 FlowType::Darkflow => execute_realtime!(Darkflow),
                 FlowType::Lexnetflow => execute_realtime!(Lexnetflow),
+                FlowType::Flashflow => execute_realtime!(Flashflow),
                 FlowType::Custom => execute_realtime!(CustomFlow),
             }
         }
@@ -294,6 +296,7 @@ async fn run_with_config(config: Config) {
                 FlowType::Rustiflow => execute_offline!(RustiFlow),
                 FlowType::Darkflow => execute_offline!(Darkflow),
                 FlowType::Lexnetflow => execute_offline!(Lexnetflow),
+                FlowType::Flashflow => execute_offline!(Flashflow),
                 FlowType::Custom => execute_offline!(CustomFlow),
             }
         }

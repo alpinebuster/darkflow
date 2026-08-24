@@ -74,7 +74,7 @@ fn export_profile() -> Option<&'static ExportProfile> {
     static ENABLED: OnceLock<bool> = OnceLock::new();
     static PROFILE: ExportProfile = ExportProfile::new();
 
-    if *ENABLED.get_or_init(|| env_flag("RUSTIFLOW_PROFILE_EXPORT_BREAKDOWN")) {
+    if *ENABLED.get_or_init(|| env_flag("DARKFLOW_PROFILE_EXPORT_BREAKDOWN")) {
         Some(&PROFILE)
     } else {
         None

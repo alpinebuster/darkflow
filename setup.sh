@@ -5,8 +5,8 @@ set -e
 echo "========== Installing system dependencies =========="
 
 # libpcap development headers
-sudo apt update
-sudo apt install -y libpcap-dev curl build-essential pkg-config
+sudo apt update || echo "apt update failed, continuing..."
+sudo apt install -y libpcap-dev curl build-essential pkg-config || echo "apt install failed, continuing..."
 
 
 echo "========== Installing Rust (rustup) =========="
@@ -32,7 +32,8 @@ ARCH="$(uname -m)"
 OS="$(uname -s)"
 
 if [[ "$OS" == "Linux" && "$ARCH" == "x86_64" ]]; then
-  cargo install bpf-linker || echo "bpf-linker already installed"
+  cargo install cargo-binstall --locked
+  cargo binstall -y bpf-linker || echo "bpf-linker already installed"
 else
   echo "Non-x86_64 or non-Linux detected."
   echo "Installing llvm and bpf-linker without default features."
@@ -58,7 +59,7 @@ if [[ -d "$VMLINUX_DIR" ]]; then
 else
   echo "linux-tools-5.8.0-63-generic not found."
   echo "If you are on Ubuntu 20.04, you may need:"
-  echo "  sudo apt install linux-tools-5.8.0-63-generic"
+  echo "  sudo apt install linux-tools-5.8.0-63-generic && export PATH=/usr/lib/linux-tools/5.8.0-63-generic:$PATH"
 fi
 
 echo "========== Setup completed =========="

@@ -26,3 +26,5 @@ __pycache__
 *.pcap*
 !darkflow/tests/data/*.pcap
 *.csv
+llvm.sh
+darkflow-profile.svg

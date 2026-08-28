@@ -12,6 +12,7 @@ use crate::flow_tui::launch_packet_tui;
 use crate::packet_counts::PacketCountPerSecond;
 use crate::realtime_mode::PacketGraphMode;
 use crate::{flow_table::FlowTable, flows::flow::Flow, packet_features::PacketFeatures};
+use crate::traffic_stats::TrafficStats;
 use anyhow::Context;
 use aya::{
     maps::{MapData, PerCpuArray, RingBuf},
@@ -133,6 +134,7 @@ pub async fn handle_realtime<T>(
     expiration_check_interval: u64,
     ingress_only: bool,
     packet_graph_mode: PacketGraphMode,
+    traffic_stats: Arc<TrafficStats>,
 ) -> Result<u64, anyhow::Error>
 where
     T: Flow,
@@ -271,6 +273,7 @@ where
             early_export,
             output_channel.clone(),
             expiration_check_interval,
+            traffic_stats.clone(),
         );
 
         // Spawn a task per shard

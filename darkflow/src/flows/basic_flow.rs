@@ -82,6 +82,9 @@ pub struct BasicFlow {
     saw_fin_fwd: bool,
     saw_fin_bwd: bool,
     tcp_simultaneous_close: bool,
+
+    pub packet_count: u64,
+    pub wire_len: u64,
 }
 
 impl BasicFlow {
@@ -281,10 +284,15 @@ impl Flow for BasicFlow {
             saw_fin_fwd: false,
             saw_fin_bwd: false,
             tcp_simultaneous_close: false,
+            packet_count: 0,
+            wire_len: 0,
         }
     }
 
     fn update_flow(&mut self, packet: &PacketFeatures, fwd: bool) -> bool {
+        self.packet_count += 1;
+        self.wire_len += packet.length as u64;
+
         self.last_timestamp_us = packet.timestamp_us;
         self.observe_tcp_handshake(packet, fwd);
 
@@ -367,5 +375,17 @@ impl Flow for BasicFlow {
         }
 
         (false, FlowExpireCause::None)
+    }
+
+    fn is_tcp(&self) -> bool {
+        self.is_tcp()
+    }
+
+    fn get_packet_count(&self) -> u64 {
+        self.packet_count
+    }
+
+    fn get_wire_len(&self) -> u64 {
+        self.wire_len
     }
 }

@@ -1,8 +1,9 @@
 use std::{collections::HashMap, time::Instant};
+use std::sync::Arc;
 
 use crate::{
     export_profile, flow_key::FlowKey, flows::util::FlowExpireCause,
-    packet_features::PacketFeatures, Flow,
+    packet_features::PacketFeatures, traffic_stats::TrafficStats, Flow,
 };
 use log::{debug, error};
 use tokio::sync::mpsc;
@@ -28,6 +29,7 @@ pub struct FlowTable<T> {
     export_channel: mpsc::Sender<T>,
     next_check_time_us: Option<i64>, // Track the next time we check for flow expirations
     expiration_check_interval_us: i64, // Check for expired flows every x seconds
+    traffic_stats: Arc<TrafficStats>,
 }
 
 impl<T> FlowTable<T>
@@ -40,6 +42,7 @@ where
         early_export: Option<u64>,
         export_channel: mpsc::Sender<T>,
         expiration_check_interval: u64,
+        traffic_stats: Arc<TrafficStats>,
     ) -> Self {
         Self {
             flow_map: HashMap::new(),
@@ -49,11 +52,14 @@ where
             export_channel,
             next_check_time_us: None,
             expiration_check_interval_us: (expiration_check_interval * 1_000_000) as i64,
+            traffic_stats,
         }
     }
 
     /// Processes a packet (either IPv4 or IPv6) and updates the flow map.
     pub async fn process_packet(&mut self, packet: &PacketFeatures) {
+        self.traffic_stats.record_packet(packet);
+
         // Check if enough virtual time has passed to trigger flow expiration checks
         self.check_and_export_expired_flows(packet.timestamp_us)
             .await;
@@ -74,6 +80,8 @@ where
 
     /// Create and insert a new flow for the given packet.
     async fn create_and_insert_flow(&mut self, packet: &PacketFeatures) {
+        self.traffic_stats.record_new_flow();
+
         let flow_key = packet.flow_key_value();
         let mut new_flow = T::new(
             flow_key.to_string(),
@@ -93,6 +101,7 @@ where
                 self.flow_map.insert(flow_key, new_flow);
             }
             FlowUpdate::Terminated(flow) => {
+                self.traffic_stats.record_completed_flow(&flow);
                 self.export_flow(flow).await;
             }
         }
@@ -115,11 +124,13 @@ where
             }
             ExistingFlowUpdate::Terminated(flow) => {
                 self.flow_map.remove(&flow_key);
+                self.traffic_stats.record_completed_flow(&flow);
                 self.export_flow(flow).await;
             }
             ExistingFlowUpdate::Expired(cause) => {
                 if let Some(mut flow) = self.flow_map.remove(&flow_key) {
                     flow.close_flow(packet.timestamp_us, cause);
+                    self.traffic_stats.record_completed_flow(&flow);
                     self.export_flow(flow).await;
                 }
                 self.create_and_insert_flow(packet).await;
@@ -190,6 +201,7 @@ where
         // Export each flow in order of `first_timestamp`
         for mut flow in flows_to_export {
             flow.close_flow(timestamp_us, FlowExpireCause::ExporterShutdown);
+            self.traffic_stats.record_completed_flow(&flow);
             self.export_flow(flow).await;
         }
     }
@@ -239,6 +251,7 @@ where
         for (key, cause) in expired_flows {
             if let Some(mut flow) = self.flow_map.remove(&key) {
                 flow.close_flow(timestamp_us, cause);
+                self.traffic_stats.record_completed_flow(&flow);
                 self.export_flow(flow).await;
             }
         }

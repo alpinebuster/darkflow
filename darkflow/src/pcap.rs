@@ -1,7 +1,9 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::Arc;
 
 use crate::Flow;
 use crate::{flow_table::FlowTable, packet_features::PacketFeatures};
+use crate::traffic_stats::TrafficStats;
 use chrono::DateTime;
 use log::{debug, error};
 use pnet::packet::{
@@ -27,6 +29,7 @@ pub async fn read_pcap_file<T>(
     idle_timeout: u64,
     early_export: Option<u64>,
     expiration_check_interval: u64,
+    traffic_stats: Arc<TrafficStats>,
 ) -> Result<(), anyhow::Error>
 where
     T: Flow,
@@ -51,6 +54,7 @@ where
         idle_timeout,
         early_export,
         expiration_check_interval,
+        traffic_stats,
     );
 
     debug!("Reading the pcap file: {:?} ...", path);
@@ -257,6 +261,7 @@ fn create_shard_senders<T>(
     idle_timeout: u64,
     early_export: Option<u64>,
     expiration_check_interval: u64,
+    traffic_stats: Arc<TrafficStats>,
 ) -> Vec<mpsc::Sender<PacketFeatures>>
 where
     T: Flow,
@@ -271,6 +276,7 @@ where
             early_export,
             output_channel.clone(),
             expiration_check_interval,
+            traffic_stats.clone(),
         );
 
         tokio::spawn(async move {

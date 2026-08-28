@@ -147,4 +147,14 @@ pub trait Flow: Send + Sync + 'static + Clone {
         active_timeout: u64,
         idle_timeout: u64,
     ) -> (bool, FlowExpireCause);
+
+    fn is_tcp(&self) -> bool;
+
+    fn get_packet_count(&self) -> u64 {
+        0
+    }
+
+    fn get_wire_len(&self) -> u64 {
+        0
+    }
 }

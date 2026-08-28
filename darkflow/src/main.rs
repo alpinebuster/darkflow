@@ -22,22 +22,24 @@ mod realtime;
 mod realtime;
 mod realtime_mode;
 mod tests;
+mod traffic_stats;
 mod tui;
 
 use crate::flows::{cic_flow::CicFlow, rusti_flow::RustiFlow};
 use crate::pcap::read_pcap_file;
 use crate::realtime::handle_realtime;
+use crate::traffic_stats::TrafficStats;
 use args::{Cli, Commands, ConfigFile, ExportConfig, FlowType, OutputConfig};
 use clap::Parser;
 use flows::{
-    basic_flow::BasicFlow, custom_flow::CustomFlow, flow::Flow,
-    nf_flow::NfFlow, cidds_flow::CiddsFlow,
-    dark_flow::Darkflow, lexnet_flow::Lexnetflow, flash_flow::Flashflow,
+    basic_flow::BasicFlow, cidds_flow::CiddsFlow, custom_flow::CustomFlow, dark_flow::Darkflow,
+    flash_flow::Flashflow, flow::Flow, lexnet_flow::Lexnetflow, nf_flow::NfFlow,
 };
 use log::{debug, error, info};
 use output::OutputWriter;
 use profiling::ProfilingSession;
 use realtime_mode::packet_graph_mode;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use tui::{launch_tui, Config};
@@ -130,6 +132,7 @@ async fn run_with_config(config: Config) {
                     // Create channel for exporting flows
                     let (sender, mut receiver) = mpsc::channel::<$flow_ty>(1000);
 
+                    let traffic_stats = Arc::new(TrafficStats::new());
                     // Start the output writer in a separate task
                     let output_task = tokio::spawn(async move {
                         while let Some(flow) = receiver.recv().await {
@@ -164,6 +167,7 @@ async fn run_with_config(config: Config) {
                         config.config.expiration_check_interval,
                         ingress_only,
                         packet_graph_mode,
+                        traffic_stats.clone(),
                     )
                     .await;
 
@@ -179,6 +183,22 @@ async fn run_with_config(config: Config) {
                     }
 
                     export_profile::log_summary("realtime");
+
+                    let stats = traffic_stats.snapshot();
+                    info!("========== Traffic Statistics ==========");
+                    info!("Total flows: {}", stats.total_flows);
+                    info!("Total packets: {}", stats.total_packets);
+                    info!("Total wire len: {}", stats.total_wire_len);
+                    info!("========== Flows > 1000 packets ==========");
+                    info!("Large flow count: {}", stats.large_flow_count);
+                    info!(
+                        "Large flow total packets: {}",
+                        stats.large_flow_total_packets
+                    );
+                    info!(
+                        "Large flow total wire len: {}",
+                        stats.large_flow_total_wire_len
+                    );
 
                     let end = Instant::now();
                     info!(
@@ -229,6 +249,7 @@ async fn run_with_config(config: Config) {
                     // Create channel for exporting flows
                     let (sender, mut receiver) = mpsc::channel::<$flow_ty>(1000);
 
+                    let traffic_stats = Arc::new(TrafficStats::new());
                     // Start the output writer in a separate task
                     let output_task = tokio::spawn(async move {
                         while let Some(flow) = receiver.recv().await {
@@ -261,6 +282,7 @@ async fn run_with_config(config: Config) {
                         config.config.idle_timeout,
                         config.config.early_export,
                         config.config.expiration_check_interval,
+                        traffic_stats.clone(),
                     )
                     .await
                     {
@@ -280,8 +302,24 @@ async fn run_with_config(config: Config) {
                         }
                     }
 
+                    let stats = traffic_stats.snapshot();
+                    info!("========== Traffic Statistics ==========");
+                    info!("Total flows: {}", stats.total_flows);
+                    info!("Total packets: {}", stats.total_packets);
+                    info!("Total wire len: {}", stats.total_wire_len);
+                    info!("========== Large Flow Packets ==========");
+                    info!("Large flow count: {}", stats.large_flow_count);
+                    info!(
+                        "Large flow total packets: {}",
+                        stats.large_flow_total_packets
+                    );
+                    info!(
+                        "Large flow total wire len: {}",
+                        stats.large_flow_total_wire_len
+                    );
+
                     let end = Instant::now();
-                    debug!(
+                    info!(
                         "Duration: {:?} milliseconds",
                         end.duration_since(start).as_millis()
                     );

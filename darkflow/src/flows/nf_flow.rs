@@ -443,4 +443,16 @@ impl Flow for NfFlow {
         self.basic_flow
             .is_expired(timestamp_us, active_timeout, idle_timeout)
     }
+
+    fn is_tcp(&self) -> bool {
+        self.basic_flow.is_tcp()
+    }
+
+    fn get_packet_count(&self) -> u64 {
+        self.basic_flow.get_packet_count()
+    }
+
+    fn get_wire_len(&self) -> u64 {
+        self.basic_flow.get_wire_len()
+    }
 }

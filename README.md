@@ -202,6 +202,10 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
 
 ### bpf Linker Installation
 
+Use the upstream prebuilt binary. Building current `bpf-linker` releases with
+`cargo install` requires a matching system LLVM installation; Rust's
+`llvm-tools-preview` component alone is not sufficient.
+
 - **Ubuntu 20.04 LTS Specific**:
 
   ```bash
@@ -233,9 +237,19 @@ Use `./setup.sh` script directly to setup deps and `./build.sh` to build `darkfl
   # or
   cargo install cargo-binstall --locked
   cargo binstall bpf-linker
+  # or
+  sudo apt install zstd # Debian/Ubuntu; use your distribution's package manager elsewhere
+  curl -fL --retry 3 https://github.com/aya-rs/bpf-linker/releases/download/v0.11.1/bpf-linker-x86_64-unknown-linux-musl.tar.zst -o /tmp/bpf-linker.tar.zst
+  mkdir -p "$HOME/.cargo/bin"
+  tar --zstd -xf /tmp/bpf-linker.tar.zst -C "$HOME/.cargo/bin"
+  rm /tmp/bpf-linker.tar.zst
+
+  bpf-linker --version
   ```
 
-- **For MacOS/Linux (Other Architectures)**:
+- **For MacOS/Linux (Other Architectures)**: choose the matching archive from
+  the [upstream releases](https://github.com/aya-rs/bpf-linker/releases/tag/v0.11.1),
+  or follow the [upstream installation guide](https://github.com/aya-rs/bpf-linker#installation).
 
   ```bash
   brew install llvm

@@ -15,7 +15,7 @@ A DarkNet ([Tor](https://spec.torproject.org/)) Traffic Feature Extraction Tool 
 
 ## Feature sets
 
-See the [wiki](./wiki) for the different feature sets available.
+See the [wiki](./docs/wiki/Home.md) for the different feature sets available.
 
 ## Supported Packet/Header Coverage
 
@@ -62,11 +62,11 @@ project/
 
 ### Realtime processing
 
-![DF Architecture Realtime](figures/realtime.png)
+![DF Architecture Realtime](./docs/figures/realtime.png)
 
 ### Offline PCAP processing
 
-![DF Architecture Offline](figures/offline.png)
+![DF Architecture Offline](./docs/figures/offline.png)
 
 ## Using the release binary
 
